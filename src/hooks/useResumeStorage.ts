@@ -2,14 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { StoredResume } from '@/types'
 import { getResume, removeResume, saveResume } from '@/lib/storage'
 import { extractTextFromFile, isSupportedResumeFile } from '@/lib/parseResume'
-import {
-  loadResumeTemplate,
-  TEMPLATE_FILE_NAME,
-  TEMPLATE_MIME,
-  TEMPLATE_VERSION,
-} from '@/lib/resumeTemplate'
-
-const TEMPLATE_VERSION_KEY = 'fitline-template-version'
+import { loadResumeTemplate, TEMPLATE_FILE_NAME, TEMPLATE_MIME } from '@/lib/resumeTemplate'
 
 export function useResumeStorage() {
   const [resume, setResume] = useState<StoredResume | null>(null)
@@ -18,49 +11,37 @@ export function useResumeStorage() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
 
-  const seedTemplate = useCallback(async () => {
+  /** Optional demo seed only when nothing is saved yet. */
+  const seedDemoIfEmpty = useCallback(async () => {
     const template = await loadResumeTemplate()
-    const saved = await saveResume({
+    return saveResume({
       fileName: TEMPLATE_FILE_NAME,
       mimeType: TEMPLATE_MIME,
       savedAt: Date.now(),
       text: template.text,
       blob: template.blob,
     })
-    try {
-      localStorage.setItem(TEMPLATE_VERSION_KEY, String(TEMPLATE_VERSION))
-    } catch {
-      // ignore
-    }
-    return saved
   }, [])
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
       let stored = await getResume()
-      const isDocx = !!stored?.fileName?.toLowerCase().endsWith('.docx')
-      let seededVersion = 0
-      try {
-        seededVersion = Number(localStorage.getItem(TEMPLATE_VERSION_KEY) || '0')
-      } catch {
-        seededVersion = 0
-      }
-      if (!stored?.blob || !isDocx || seededVersion !== TEMPLATE_VERSION) {
-        stored = await seedTemplate()
+      if (!stored?.blob || !stored.text?.trim()) {
+        stored = await seedDemoIfEmpty()
       }
       setResume(stored)
     } catch {
       try {
-        const seeded = await seedTemplate()
+        const seeded = await seedDemoIfEmpty()
         setResume(seeded)
       } catch {
-        setError('Could not load the Fitline resume layout template.')
+        setError('Could not load a resume on this device.')
       }
     } finally {
       setLoading(false)
     }
-  }, [seedTemplate])
+  }, [seedDemoIfEmpty])
 
   useEffect(() => {
     void refresh()
@@ -76,16 +57,16 @@ export function useResumeStorage() {
     setBusy(true)
     try {
       const text = await extractTextFromFile(file, (message) => setStatus(message))
+      if (!text || text.trim().length < 40) {
+        throw new Error('Could not read enough text from that file. Try another PDF or DOCX.')
+      }
       setStatus('Saving on this device…')
-      const isDocx =
-        file.name.toLowerCase().endsWith('.docx') ||
-        (file.type || '').includes('wordprocessingml')
       const saved = await saveResume({
-        fileName: isDocx ? TEMPLATE_FILE_NAME : file.name,
-        mimeType: isDocx ? TEMPLATE_MIME : file.type || 'application/octet-stream',
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
         savedAt: Date.now(),
         text,
-        blob: isDocx ? file : (await loadResumeTemplate()).blob,
+        blob: file,
       })
       setResume(saved)
       setStatus(null)
@@ -103,14 +84,13 @@ export function useResumeStorage() {
     setStatus(null)
     try {
       await removeResume()
-      const seeded = await seedTemplate()
-      setResume(seeded)
+      setResume(null)
     } catch {
-      setError('Could not reset the resume template.')
+      setError('Could not remove the saved resume.')
     } finally {
       setBusy(false)
     }
-  }, [seedTemplate])
+  }, [])
 
   return { resume, loading, busy, status, error, setError, upload, remove, refresh }
 }

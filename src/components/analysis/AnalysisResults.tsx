@@ -292,9 +292,8 @@ export function AnalysisResults({
       <div className="fitline-card">
         <h3 style={{ marginBottom: 8 }}>Get your tailored resume</h3>
         <p style={{ marginBottom: 20 }}>
-          Rebuild writes job-specific edits into your Fitline layout, then automatically
-          downloads a PDF with cleaned contact details and no OCR typos. Prefer DOCX from the
-          button if you need Word.
+          Rebuild rewrites your own resume for this job, keeps the Fitline layout, then
+          automatically downloads a PDF. Your name, contact, and experience stay yours.
         </p>
         <div className="fitline-actions">
           <Button disabled={generating} onClick={onGenerate}>

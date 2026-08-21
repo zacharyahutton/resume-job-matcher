@@ -33,7 +33,6 @@ import {
   isTrivialEdit,
 } from '@/lib/preserveFormat'
 import { materializeDownloads } from '@/lib/generateDocs'
-import { loadResumeTemplate, TEMPLATE_FILE_NAME, TEMPLATE_MIME } from '@/lib/resumeTemplate'
 
 export type ProgressFn = (stage: AnalysisStage, detail?: string) => void
 
@@ -312,7 +311,7 @@ function buildPreservedTailored(
   if (!fullText.trim()) fullText = originalText
   fullText = normalizeResumeExportText(fullText)
 
-  const baseName = (name || 'Zachary_Hutton').replace(/\s+/g, '_')
+  const baseName = (name || 'Resume').replace(/\s+/g, '_')
 
   return {
     fullText,
@@ -320,54 +319,23 @@ function buildPreservedTailored(
     sections: sectionsFromPreservedText(fullText),
     formatPreserved: true,
     appliedChanges,
-    sourceFileName: source?.fileName || TEMPLATE_FILE_NAME,
-    sourceMimeType: source?.mimeType || TEMPLATE_MIME,
+    sourceFileName: source?.fileName,
+    sourceMimeType: source?.mimeType,
     sourceBlob: source?.blob,
   }
 }
 
-/** Always attach the canonical layout DOCX as the download source. */
-async function withTemplateSource(
+/** Keep the user's own file as the export source. Layout style comes from Fitline classic rebuild when needed. */
+function withUserExportSource(
   tailored: TailoredResume,
   source?: ResumeSourceMeta,
-): Promise<TailoredResume> {
-  const template = await resolveTemplate(source)
+): TailoredResume {
   return {
     ...tailored,
-    sourceFileName: TEMPLATE_FILE_NAME,
-    sourceMimeType: TEMPLATE_MIME,
-    sourceBlob: template.blob,
+    sourceFileName: source?.fileName || tailored.sourceFileName,
+    sourceMimeType: source?.mimeType || tailored.sourceMimeType,
+    sourceBlob: source?.blob || tailored.sourceBlob,
   }
-}
-
-async function resolveTemplate(source?: ResumeSourceMeta) {
-  if (source?.blob && isDocxSource(source.fileName, source.mimeType)) {
-    const arrayBuffer = await source.blob.arrayBuffer()
-    const mammoth = await import('mammoth')
-    const extracted = await mammoth.extractRawText({ arrayBuffer })
-    const text = extracted.value
-      .replace(/\u0000/g, '')
-      .replace(/\r/g, '\n')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/[^\S\n]{2,}/g, ' ')
-      .trim()
-    if (text.length > 80) {
-      return {
-        blob: source.blob,
-        text,
-        fileName: TEMPLATE_FILE_NAME,
-        mimeType: TEMPLATE_MIME,
-      }
-    }
-  }
-  return loadResumeTemplate()
-}
-
-function isDocxSource(fileName?: string, mimeType?: string) {
-  const name = (fileName || '').toLowerCase()
-  const mime = (mimeType || '').toLowerCase()
-  return name.endsWith('.docx') || mime.includes('wordprocessingml')
 }
 
 type TailoringChangeLike = {
@@ -568,19 +536,22 @@ export async function runAnalysisPipeline(args: {
   /** When true (default), build PDF/DOCX blobs after the edit plan is ready. */
   materialize?: boolean
 }): Promise<AnalysisResult> {
-  const { jobText, source, onProgress, materialize = true } = args
+  const { resumeText, jobText, source, onProgress, materialize = true } = args
 
-  onProgress?.('extracting_resume', 'Loading the Fitline layout template…')
-  const template = await resolveTemplate(source)
-  const canonicalSource: ResumeSourceMeta = {
-    fileName: TEMPLATE_FILE_NAME,
-    mimeType: TEMPLATE_MIME,
-    blob: template.blob,
+  onProgress?.('extracting_resume', 'Reading every section of your resume…')
+  const userText = (resumeText || '').trim()
+  if (userText.length < 40) {
+    throw new Error('Upload or paste a fuller resume first. Fitline needs your content, not a blank file.')
   }
 
-  // Always tailor against the canonical DOCX text so edits land in the template.
-  const resumeProfile = await extractResumeProfile(template.text)
-  resumeProfile.rawText = template.text
+  const resumeProfile = await extractResumeProfile(userText)
+  resumeProfile.rawText = userText
+
+  const exportSource: ResumeSourceMeta = {
+    fileName: source?.fileName,
+    mimeType: source?.mimeType,
+    blob: source?.blob,
+  }
 
   onProgress?.('extracting_job', 'Listing every must-have and nice-to-have…')
   const job = await extractJob(jobText)
@@ -596,18 +567,18 @@ export async function runAnalysisPipeline(args: {
   onProgress?.('assessing_fit', 'Writing why you would or would not be a fit…')
   const fit = await assessFit(job, matches, resumeProfile)
 
-  onProgress?.('planning_tailor', 'Planning exact line edits inside your layout template…')
+  onProgress?.('planning_tailor', 'Planning line edits on your content in the Fitline layout…')
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     job,
     matches,
-    canonicalSource,
+    exportSource,
     'deep',
   )
 
-  let finalTailored = await withTemplateSource(tailored, canonicalSource)
+  let finalTailored = withUserExportSource(tailored, exportSource)
   if (materialize) {
-    onProgress?.('generating', 'Writing edits into the DOCX layout and exporting PDF…')
+    onProgress?.('generating', 'Building your tailored PDF (and DOCX)…')
     finalTailored = await materializeDownloads(finalTailored)
   }
 
@@ -628,48 +599,44 @@ export async function runAnalysisPipeline(args: {
 export async function buildTailoredFromExistingPlan(
   result: AnalysisResult,
   onProgress?: ProgressFn,
-  _source?: ResumeSourceMeta,
+  source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  onProgress?.('generating', 'Rebuilding from your saved edit plan into the layout template…')
-  const template = await loadResumeTemplate()
-  const canonicalSource: ResumeSourceMeta = {
-    fileName: TEMPLATE_FILE_NAME,
-    mimeType: TEMPLATE_MIME,
-    blob: template.blob,
+  onProgress?.('generating', 'Rebuilding your tailored resume from the saved edit plan…')
+  const exportSource: ResumeSourceMeta = source || {
+    fileName: result.tailored?.sourceFileName,
+    mimeType: result.tailored?.sourceMimeType,
+    blob: result.tailored?.sourceBlob,
   }
-
   const tailored = buildPreservedTailored(
-    template.text,
+    result.resumeProfile.rawText,
     result.tailoring.changes,
     result.resumeProfile.name,
-    canonicalSource,
+    exportSource,
   )
-  const withSource = await withTemplateSource(tailored, canonicalSource)
+  const withSource = withUserExportSource(tailored, exportSource)
 
   onProgress?.('done')
   return { ...result, tailored: withSource }
 }
 
 /**
- * Full rebuild: rematch → deep AI tailor for this JD → format-preserving apply → PDF/DOCX.
- * This is the slow path with a real loading sequence.
+ * Full rebuild: rematch → deep AI tailor for this JD → apply onto the user's content → PDF/DOCX.
  */
 export async function deepRebuildTailoredResume(
   result: AnalysisResult,
   onProgress?: ProgressFn,
-  _source?: ResumeSourceMeta,
+  source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  onProgress?.('extracting_resume', 'Loading the Fitline layout template…')
-  const template = await loadResumeTemplate()
-  const canonicalSource: ResumeSourceMeta = {
-    fileName: TEMPLATE_FILE_NAME,
-    mimeType: TEMPLATE_MIME,
-    blob: template.blob,
+  onProgress?.('extracting_resume', 'Using your uploaded resume content…')
+  const exportSource: ResumeSourceMeta = source || {
+    fileName: result.tailored?.sourceFileName,
+    mimeType: result.tailored?.sourceMimeType,
+    blob: result.tailored?.sourceBlob,
   }
 
   const resumeProfile = {
     ...result.resumeProfile,
-    rawText: template.text,
+    rawText: result.resumeProfile.rawText,
   }
 
   onProgress?.('matching', 'Re-checking every requirement against your resume…')
@@ -678,20 +645,17 @@ export async function deepRebuildTailoredResume(
   onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
   const fit = await assessFit(result.job, matches, resumeProfile)
 
-  onProgress?.(
-    'planning_tailor',
-    'Rewriting lines inside your exact DOCX layout…',
-  )
+  onProgress?.('planning_tailor', 'Rewriting your lines for this job in the Fitline layout…')
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     result.job,
     matches,
-    canonicalSource,
+    exportSource,
     'deep',
   )
 
-  onProgress?.('generating', 'Saving the tailored DOCX (same layout) and PDF…')
-  const withSource = await withTemplateSource(tailored, canonicalSource)
+  onProgress?.('generating', 'Exporting your tailored PDF…')
+  const withSource = withUserExportSource(tailored, exportSource)
   const materialized = await materializeDownloads(withSource)
 
   onProgress?.('done')
@@ -708,24 +672,23 @@ export async function deepRebuildTailoredResume(
 export async function regenerateTailoredResume(
   result: AnalysisResult,
   onProgress?: ProgressFn,
-  _source?: ResumeSourceMeta,
+  source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  onProgress?.('planning_tailor', 'Refreshing edits inside the Fitline layout template…')
-  const template = await loadResumeTemplate()
-  const canonicalSource: ResumeSourceMeta = {
-    fileName: TEMPLATE_FILE_NAME,
-    mimeType: TEMPLATE_MIME,
-    blob: template.blob,
+  onProgress?.('planning_tailor', 'Refreshing edits on your resume content…')
+  const exportSource: ResumeSourceMeta = source || {
+    fileName: result.tailored?.sourceFileName,
+    mimeType: result.tailored?.sourceMimeType,
+    blob: result.tailored?.sourceBlob,
   }
-  const resumeProfile = { ...result.resumeProfile, rawText: template.text }
+  const resumeProfile = result.resumeProfile
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     result.job,
     result.matches,
-    canonicalSource,
+    exportSource,
     'deep',
   )
-  const withSource = await withTemplateSource(tailored, canonicalSource)
+  const withSource = withUserExportSource(tailored, exportSource)
   onProgress?.('done')
   return { ...result, resumeProfile, tailoring: plan, tailored: withSource }
 }

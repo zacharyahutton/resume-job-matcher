@@ -88,11 +88,11 @@ export function ResumePanel({
             <div>
               <h3 style={{ marginBottom: 4 }}>{resume.fileName}</h3>
               <p style={{ margin: 0 }}>
-                Fitline layout template · {formatDate(resume.savedAt)}
+                Saved on this device · {formatDate(resume.savedAt)}
                 {resume.text ? ` · ${resume.text.split(/\s+/).length} words` : ''}
               </p>
               <p style={{ margin: '6px 0 0', fontSize: 14, color: '#7b878c' }}>
-                Every rebuild writes into this DOCX layout so the form stays consistent.
+                Exports use the Fitline layout with your content only.
               </p>
             </div>
           </div>

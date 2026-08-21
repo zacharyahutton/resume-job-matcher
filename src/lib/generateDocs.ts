@@ -12,7 +12,6 @@ import { saveAs } from 'file-saver'
 import type { TailoredResume } from '@/types'
 import { isDocxMime, normalizeResumeExportText } from '@/lib/preserveFormat'
 import { tailorDocxBlob } from '@/lib/tailorDocx'
-import { loadResumeTemplate } from '@/lib/resumeTemplate'
 
 type LineKind = 'blank' | 'name' | 'contact' | 'heading' | 'job' | 'bullet' | 'body'
 
@@ -189,17 +188,22 @@ export async function downloadDocx(resume: TailoredResume): Promise<void> {
 }
 
 async function buildDocxBlob(resume: TailoredResume): Promise<Blob> {
-  // Prefer the attached canonical DOCX (seeded from ZACHARY_HUTTON_RESUME).
-  // Fall back to the bundled template so layout never drifts to a classic rebuild.
+  // If the user uploaded their own DOCX, edit that file in place (their content + layout).
+  // Never inject the master Zachary template content into someone else's export.
+  const name = (resume.sourceFileName || '').toLowerCase()
+  const isMasterName = name.includes('zachary_hutton_resume') || name === 'zachary-resume.docx'
   try {
-    if (resume.sourceBlob && isDocxMime(resume.sourceMimeType || '', resume.sourceFileName || '')) {
+    if (
+      resume.sourceBlob &&
+      isDocxMime(resume.sourceMimeType || '', resume.sourceFileName || '') &&
+      !isMasterName
+    ) {
       return await tailorDocxBlob(resume.sourceBlob, resume.appliedChanges || [])
     }
-    const template = await loadResumeTemplate()
-    return await tailorDocxBlob(template.blob, resume.appliedChanges || [])
   } catch (err) {
-    console.error('[Fitline] template DOCX build failed', err)
+    console.error('[Fitline] user DOCX edit failed, falling back to classic layout', err)
   }
+  // Fitline layout shell filled with this user's tailored text.
   return buildClassicDocxBlob(resume)
 }
 
