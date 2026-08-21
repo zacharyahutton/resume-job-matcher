@@ -13,9 +13,8 @@ CRITICAL RULES. NEVER violate these:
 `.trim()
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-/** Primary structured-output model on Groq */
+/** Live Groq models only. Do not use retired Meta IDs. */
 const GROQ_MODEL = 'openai/gpt-oss-20b'
-/** Fallback after llama-3.3-70b-versatile shutdown (2026-08-16) */
 const GROQ_FALLBACK_MODEL = 'openai/gpt-oss-120b'
 
 function stripNullTypes(schema: unknown): unknown {
@@ -58,33 +57,35 @@ export async function callOpenAIJson<T>(args: {
     { role: 'user', content: args.user },
   ]
   const max_tokens = args.maxTokens ?? 6000
+  const temperature = args.temperature ?? 0.2
 
-  const attempt = async (body: Record<string, unknown>) => {
+  const attempt = async (model: string, body: Record<string, unknown>) => {
     const response = await fetch(GROQ_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, model, temperature, max_tokens }),
     })
 
     if (!response.ok) {
       const errText = await response.text()
-      throw new Error(`Groq request failed (${response.status}): ${errText.slice(0, 280)}`)
+      throw new Error(`Groq ${model} failed (${response.status}): ${errText.slice(0, 280)}`)
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content
-    if (!content) throw new Error('Empty Groq response.')
-    return JSON.parse(content) as T
+    if (!content) throw new Error(`Empty Groq response from ${model}.`)
+    try {
+      return JSON.parse(content) as T
+    } catch {
+      throw new Error(`Groq ${model} returned invalid JSON.`)
+    }
   }
 
   try {
-    return await attempt({
-      model: GROQ_MODEL,
-      temperature: args.temperature ?? 0.2,
-      max_tokens,
+    return await attempt(GROQ_MODEL, {
       response_format: {
         type: 'json_schema',
         json_schema: {
@@ -96,12 +97,8 @@ export async function callOpenAIJson<T>(args: {
       messages,
     })
   } catch (primaryErr) {
-    // Fallback: JSON object mode on a live model (llama-3.3-70b-versatile is gone)
     try {
-      return await attempt({
-        model: GROQ_FALLBACK_MODEL,
-        temperature: args.temperature ?? 0.2,
-        max_tokens,
+      return await attempt(GROQ_FALLBACK_MODEL, {
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -111,10 +108,10 @@ export async function callOpenAIJson<T>(args: {
           { role: 'user', content: args.user },
         ],
       })
-    } catch {
-      throw primaryErr instanceof Error
-        ? primaryErr
-        : new Error('Groq request failed on primary and fallback models.')
+    } catch (fallbackErr) {
+      const a = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
+      const b = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+      throw new Error(`${a} | fallback: ${b}`)
     }
   }
 }
