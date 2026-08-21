@@ -3,6 +3,9 @@ dist
 .DS_Store
 .env
 .env.local
+.env*.local
+!.env.example
 *.log
 template-src
 *.tsbuildinfo
+.vercel
