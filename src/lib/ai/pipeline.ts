@@ -18,6 +18,7 @@ import {
   localExtractResume,
   localMatch,
 } from '@/lib/ai/localEngine'
+import { assertJobInput } from '@/lib/jobInputGuard'
 
 export type ProgressFn = (stage: AnalysisStage, detail?: string) => void
 export type { ResumeSourceMeta }
@@ -106,6 +107,7 @@ export async function runAnalysisPipeline(args: {
   renderMode?: import('@/types').RenderMode
   /** When true, build PDF/DOCX after the plan. Default false so the user reviews the plan first. */
   materialize?: boolean
+  jobInputMode?: 'paste' | 'type' | 'image'
 }): Promise<AnalysisResult> {
   const {
     resumeText,
@@ -114,6 +116,7 @@ export async function runAnalysisPipeline(args: {
     onProgress,
     renderMode = 'preserve',
     materialize = false,
+    jobInputMode = 'paste',
   } = args
 
   let activeStage: AnalysisStage = 'extracting_resume'
@@ -138,11 +141,14 @@ export async function runAnalysisPipeline(args: {
     }
 
     activeStage = 'extracting_job'
+    onProgress?.('extracting_job', 'Checking this is a real job posting…')
+    assertJobInput(jobText, jobInputMode)
+
     onProgress?.('extracting_job', 'Listing every must-have and nice-to-have…')
     const job = localExtractJob(jobText)
     if (!job.requirements.length) {
       throw new Error(
-        'No requirements could be extracted from the job input. Try pasting a fuller job description.',
+        'No requirements could be extracted from that text. Paste a fuller job description or a clearer requirements list.',
       )
     }
 

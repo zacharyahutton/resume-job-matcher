@@ -70,6 +70,7 @@ export function AnalyzePage() {
         },
         renderMode: payload.renderMode || 'preserve',
         materialize: false,
+        jobInputMode: payload.mode,
         onProgress: (s, d) => {
           setStage(s)
           setDetail(d)

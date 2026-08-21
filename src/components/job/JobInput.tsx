@@ -1,6 +1,7 @@
 ﻿import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import type { JobInputMode, RenderMode } from '@/types'
 import { Button } from '@/components/ui/Button'
+import { assessJobInput } from '@/lib/jobInputGuard'
 import { isSupportedImageFile } from '@/lib/parseResume'
 
 interface Props {
@@ -85,11 +86,17 @@ export function JobInput({ disabled, onAnalyze }: Props) {
       onAnalyze({ mode, image, renderMode })
       return
     }
-    if (text.trim().length < 20) {
+    const trimmed = text.trim()
+    if (trimmed.length < (mode === 'type' ? 12 : 20)) {
       setLocalError('Please enter a bit more detail so we can extract requirements.')
       return
     }
-    onAnalyze({ mode, text: text.trim(), renderMode })
+    const check = assessJobInput(trimmed, { mode })
+    if (!check.ok) {
+      setLocalError(check.message)
+      return
+    }
+    onAnalyze({ mode, text: trimmed, renderMode })
   }
 
   return (
