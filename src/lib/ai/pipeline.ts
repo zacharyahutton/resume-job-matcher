@@ -1,8 +1,4 @@
 import type { AnalysisResult, AnalysisStage, TailoredResume } from '@/types'
-import { extractResumeProfile } from '@/lib/ai/stages/extractResume'
-import { extractJob } from '@/lib/ai/stages/extractJob'
-import { matchRequirements } from '@/lib/ai/stages/matchRequirements'
-import { assessFit } from '@/lib/ai/stages/assessFit'
 import {
   buildPreservedTailored,
   planAndGenerate,
@@ -16,6 +12,12 @@ import { extractTextFromBlob, looksBadlyExtracted } from '@/lib/parseResume'
 import { normalizeResumeExportText } from '@/lib/preserveFormat'
 import { getApiKeys } from '@/lib/storage'
 import { bindGroqStatus } from '@/lib/ai/client'
+import {
+  localAssessFit,
+  localExtractJob,
+  localExtractResume,
+  localMatch,
+} from '@/lib/ai/localEngine'
 
 export type ProgressFn = (stage: AnalysisStage, detail?: string) => void
 export type { ResumeSourceMeta }
@@ -26,7 +28,7 @@ function isDocxSource(fileName?: string, mimeType?: string) {
   return name.endsWith('.docx') || mime.includes('wordprocessingml')
 }
 
-function requireGroqForDeepWork() {
+function requireAiConfigured() {
   if (!getApiKeys().length) {
     throw new Error('AI is not configured yet. Please try again later.')
   }
@@ -118,94 +120,87 @@ export async function runAnalysisPipeline(args: {
   bindGroqStatus((message) => onProgress?.(activeStage, message))
 
   try {
-  onProgress?.('extracting_resume', 'Understanding every section of your resume…')
-  const { text: userText, warnings: extractWarnings } = await resolveResumeText(
-    resumeText,
-    source,
-    onProgress,
-  )
-
-  onProgress?.('extracting_resume', 'Talking to Groq about your resume…')
-  const resumeProfile = await extractResumeProfile(userText)
-  resumeProfile.rawText = userText
-
-  const exportSource: ResumeSourceMeta = {
-    fileName: source?.fileName,
-    mimeType: source?.mimeType,
-    blob: source?.blob,
-  }
-
-  // Pace Groq calls: free-tier TPM is org-wide (~8k/min). Bursting 5 stages fails.
-  const pace = () => new Promise((r) => setTimeout(r, 1200))
-
-  activeStage = 'extracting_job'
-  onProgress?.('extracting_job', 'Listing every must-have and nice-to-have…')
-  await pace()
-  const job = await extractJob(jobText)
-  if (!job.requirements.length) {
-    throw new Error(
-      'No requirements could be extracted from the job input. Try pasting a fuller job description.',
+    onProgress?.('extracting_resume', 'Understanding every section of your resume…')
+    const { text: userText, warnings: extractWarnings } = await resolveResumeText(
+      resumeText,
+      source,
+      onProgress,
     )
-  }
 
-  activeStage = 'matching'
-  onProgress?.('matching', 'Comparing your evidence to what they want…')
-  await pace()
-  const matches = await matchRequirements(job, resumeProfile)
+    // Local for extract/match/fit. Free tier cannot survive 5 AI calls.
+    const resumeProfile = localExtractResume(userText)
+    resumeProfile.rawText = userText
 
-  activeStage = 'assessing_fit'
-  onProgress?.('assessing_fit', 'Deciding fit, gaps, and interview odds…')
-  await pace()
-  const fit = await assessFit(job, matches, resumeProfile)
-
-  activeStage = 'planning_tailor'
-  onProgress?.('planning_tailor', 'Deciding what to change and what to leave alone…')
-  await pace()
-  const { plan, tailored } = await planAndGenerate(
-    resumeProfile,
-    job,
-    matches,
-    exportSource,
-    'deep',
-  )
-
-  const warnings: string[] = [...extractWarnings]
-  const warn = preserveWarning(renderMode, exportSource.fileName, exportSource.mimeType)
-  if (warn) warnings.push(warn)
-
-  let finalTailored: TailoredResume = {
-    ...withUserExportSource(tailored, exportSource),
-    renderMode,
-    formatPreserved: renderMode === 'preserve',
-  }
-
-  if (renderMode === 'optimize') {
-    finalTailored = {
-      ...finalTailored,
-      fullText: buildOptimizeFullText(resumeProfile, finalTailored),
-      formatPreserved: false,
+    const exportSource: ResumeSourceMeta = {
+      fileName: source?.fileName,
+      mimeType: source?.mimeType,
+      blob: source?.blob,
     }
-  }
 
-  if (materialize) {
-    activeStage = 'generating'
-    onProgress?.('generating', 'Building your downloadable resume…')
-    finalTailored = await materializeDownloads(finalTailored, { mode: renderMode })
-  }
+    activeStage = 'extracting_job'
+    onProgress?.('extracting_job', 'Listing every must-have and nice-to-have…')
+    const job = localExtractJob(jobText)
+    if (!job.requirements.length) {
+      throw new Error(
+        'No requirements could be extracted from the job input. Try pasting a fuller job description.',
+      )
+    }
 
-  onProgress?.('done')
+    activeStage = 'matching'
+    onProgress?.('matching', 'Comparing your evidence to what they want…')
+    const matches = localMatch(job, resumeProfile.rawText)
 
-  return {
-    resumeProfile,
-    job,
-    matches,
-    fit,
-    tailoring: plan,
-    tailored: finalTailored,
-    renderMode,
-    warnings,
-    analyzedAt: Date.now(),
-  }
+    activeStage = 'assessing_fit'
+    onProgress?.('assessing_fit', 'Deciding fit, gaps, and interview odds…')
+    const fit = localAssessFit(matches)
+
+    activeStage = 'planning_tailor'
+    onProgress?.('planning_tailor', 'Deciding what to change and what to leave alone…')
+    const { plan, tailored } = await planAndGenerate(
+      resumeProfile,
+      job,
+      matches,
+      exportSource,
+      'deep',
+    )
+
+    const warnings: string[] = [...extractWarnings]
+    const warn = preserveWarning(renderMode, exportSource.fileName, exportSource.mimeType)
+    if (warn) warnings.push(warn)
+
+    let finalTailored: TailoredResume = {
+      ...withUserExportSource(tailored, exportSource),
+      renderMode,
+      formatPreserved: renderMode === 'preserve',
+    }
+
+    if (renderMode === 'optimize') {
+      finalTailored = {
+        ...finalTailored,
+        fullText: buildOptimizeFullText(resumeProfile, finalTailored),
+        formatPreserved: false,
+      }
+    }
+
+    if (materialize) {
+      activeStage = 'generating'
+      onProgress?.('generating', 'Building your downloadable resume…')
+      finalTailored = await materializeDownloads(finalTailored, { mode: renderMode })
+    }
+
+    onProgress?.('done')
+
+    return {
+      resumeProfile,
+      job,
+      matches,
+      fit,
+      tailoring: plan,
+      tailored: finalTailored,
+      renderMode,
+      warnings,
+      analyzedAt: Date.now(),
+    }
   } finally {
     bindGroqStatus(null)
   }
@@ -258,95 +253,90 @@ export async function buildTailoredFromExistingPlan(
 }
 
 /**
- * Full rebuild: rematch → deep AI tailor → apply onto the user's content → PDF/DOCX.
+ * Full rebuild: rematch locally, ONE AI tailor pass, then PDF/DOCX.
  */
 export async function deepRebuildTailoredResume(
   result: AnalysisResult,
   onProgress?: ProgressFn,
   source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  requireGroqForDeepWork()
+  requireAiConfigured()
 
   let activeStage: AnalysisStage = 'extracting_resume'
   bindGroqStatus((message) => onProgress?.(activeStage, message))
 
   try {
-  onProgress?.('extracting_resume', 'Refreshing clean resume text…')
-  const exportSource: ResumeSourceMeta = source || {
-    fileName: result.tailored?.sourceFileName,
-    mimeType: result.tailored?.sourceMimeType,
-    blob: result.tailored?.sourceBlob,
-  }
-  const mode = result.renderMode || 'preserve'
-
-  const { text, warnings: extractWarnings } = await resolveResumeText(
-    result.resumeProfile.rawText,
-    exportSource,
-    onProgress,
-  )
-
-  const resumeProfile = {
-    ...result.resumeProfile,
-    rawText: text,
-  }
-
-  const pace = () => new Promise((r) => setTimeout(r, 1200))
-
-  activeStage = 'matching'
-  onProgress?.('matching', 'Re-checking every requirement against your resume…')
-  await pace()
-  const matches = await matchRequirements(result.job, resumeProfile)
-
-  activeStage = 'assessing_fit'
-  onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
-  await pace()
-  const fit = await assessFit(result.job, matches, resumeProfile)
-
-  activeStage = 'planning_tailor'
-  onProgress?.('planning_tailor', 'Running a full Groq tailor pass for this job…')
-  await pace()
-  const { plan, tailored } = await planAndGenerate(
-    resumeProfile,
-    result.job,
-    matches,
-    exportSource,
-    'deep',
-  )
-
-  activeStage = 'generating'
-  onProgress?.(
-    'generating',
-    mode === 'preserve' ? 'Applying edits to your layout…' : 'Building Fitline layout…',
-  )
-  let withSource: TailoredResume = {
-    ...withUserExportSource(tailored, exportSource),
-    renderMode: mode,
-    formatPreserved: mode === 'preserve',
-  }
-  if (mode === 'optimize') {
-    withSource = {
-      ...withSource,
-      fullText: buildOptimizeFullText(resumeProfile, withSource),
-      formatPreserved: false,
+    onProgress?.('extracting_resume', 'Refreshing clean resume text…')
+    const exportSource: ResumeSourceMeta = source || {
+      fileName: result.tailored?.sourceFileName,
+      mimeType: result.tailored?.sourceMimeType,
+      blob: result.tailored?.sourceBlob,
     }
-  }
-  const materialized = await materializeDownloads(withSource, { mode })
+    const mode = result.renderMode || 'preserve'
 
-  const warnings = [...(result.warnings || []), ...extractWarnings]
-  const warn = preserveWarning(mode, exportSource.fileName, exportSource.mimeType)
-  if (warn && !warnings.includes(warn)) warnings.push(warn)
+    const { text, warnings: extractWarnings } = await resolveResumeText(
+      result.resumeProfile.rawText,
+      exportSource,
+      onProgress,
+    )
 
-  onProgress?.('done')
-  return {
-    ...result,
-    resumeProfile,
-    matches,
-    fit,
-    tailoring: plan,
-    tailored: materialized,
-    renderMode: mode,
-    warnings,
-  }
+    const resumeProfile = {
+      ...result.resumeProfile,
+      rawText: text,
+    }
+
+    activeStage = 'matching'
+    onProgress?.('matching', 'Re-checking every requirement against your resume…')
+    const matches = localMatch(result.job, resumeProfile.rawText)
+
+    activeStage = 'assessing_fit'
+    onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
+    const fit = localAssessFit(matches)
+
+    activeStage = 'planning_tailor'
+    onProgress?.('planning_tailor', 'Refreshing the edit plan for this job…')
+    const { plan, tailored } = await planAndGenerate(
+      resumeProfile,
+      result.job,
+      matches,
+      exportSource,
+      'deep',
+    )
+
+    activeStage = 'generating'
+    onProgress?.(
+      'generating',
+      mode === 'preserve' ? 'Applying edits to your layout…' : 'Building Fitline layout…',
+    )
+    let withSource: TailoredResume = {
+      ...withUserExportSource(tailored, exportSource),
+      renderMode: mode,
+      formatPreserved: mode === 'preserve',
+    }
+    if (mode === 'optimize') {
+      withSource = {
+        ...withSource,
+        fullText: buildOptimizeFullText(resumeProfile, withSource),
+        formatPreserved: false,
+      }
+    }
+    const materialized = await materializeDownloads(withSource, { mode })
+
+    const warnings = [...(result.warnings || []), ...extractWarnings]
+    const warn = preserveWarning(mode, exportSource.fileName, exportSource.mimeType)
+    if (warn && !warnings.includes(warn)) warnings.push(warn)
+
+    onProgress?.('done')
+    return {
+      ...result,
+      resumeProfile,
+      matches,
+      fit,
+      tailoring: plan,
+      tailored: materialized,
+      renderMode: mode,
+      warnings,
+    }
   } finally {
     bindGroqStatus(null)
   }
@@ -357,8 +347,8 @@ export async function regenerateTailoredResume(
   onProgress?: ProgressFn,
   source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  requireGroqForDeepWork()
-  onProgress?.('planning_tailor', 'Refreshing deep edit suggestions with Groq…')
+  requireAiConfigured()
+  onProgress?.('planning_tailor', 'Refreshing edit suggestions…')
   const exportSource: ResumeSourceMeta = source || {
     fileName: result.tailored?.sourceFileName,
     mimeType: result.tailored?.sourceMimeType,
@@ -389,5 +379,11 @@ export async function regenerateTailoredResume(
   }
 }
 
-export { extractResumeProfile, extractJob, matchRequirements, assessFit, planAndGenerate }
+export {
+  localExtractResume as extractResumeProfile,
+  localExtractJob as extractJob,
+  localMatch as matchRequirements,
+  localAssessFit as assessFit,
+  planAndGenerate,
+}
 export { isDocxSource }
