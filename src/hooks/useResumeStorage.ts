@@ -4,8 +4,8 @@ import { getResume, removeResume, saveResume } from '@/lib/storage'
 import { extractTextFromFile, isSupportedResumeFile } from '@/lib/parseResume'
 
 /**
- * Resume storage is per-browser only. Never seed another person's resume
- * (including Zachary's) into empty devices.
+ * Resume storage is per-browser / per-device only.
+ * Never seed another person's resume into empty devices.
  */
 export function useResumeStorage() {
   const [resume, setResume] = useState<StoredResume | null>(null)
@@ -18,22 +18,6 @@ export function useResumeStorage() {
     setLoading(true)
     try {
       const stored = await getResume()
-      // Drop accidental demo seeds that contain Zachary's personal resume.
-      if (
-        stored &&
-        (/zachary_hutton_resume/i.test(stored.fileName) ||
-          /zachary-resume/i.test(stored.fileName) ||
-          (/zachary\s+hutton/i.test(stored.text || '') &&
-            /hzach577/i.test(stored.text || '') &&
-            /seed|template|demo/i.test(stored.fileName)))
-      ) {
-        // Only clear if it looks like the auto-seeded template filename
-        if (/zachary_hutton_resume|zachary-resume/i.test(stored.fileName)) {
-          await removeResume()
-          setResume(null)
-          return
-        }
-      }
       setResume(stored)
     } catch {
       setError('Could not read the saved resume from this device.')
@@ -68,7 +52,14 @@ export function useResumeStorage() {
         text,
         blob: file,
       })
-      setResume(saved)
+      // Confirm it actually persisted (IDB and/or local mirror).
+      const verified = await getResume()
+      if (!verified?.text) {
+        throw new Error(
+          'Save looked successful but nothing was stored. Check that this browser allows site data for Fitline.',
+        )
+      }
+      setResume(verified.fileName === saved.fileName ? verified : saved)
       setStatus(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to read that resume.')
