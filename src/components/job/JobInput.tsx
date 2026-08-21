@@ -1,5 +1,5 @@
 ﻿import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import type { JobInputMode } from '@/types'
+import type { JobInputMode, RenderMode } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { isSupportedImageFile } from '@/lib/parseResume'
 
@@ -9,6 +9,7 @@ interface Props {
     mode: JobInputMode
     text?: string
     image?: File
+    renderMode: RenderMode
   }) => void
 }
 
@@ -20,6 +21,7 @@ const TABS: Array<{ id: JobInputMode; label: string }> = [
 
 export function JobInput({ disabled, onAnalyze }: Props) {
   const [mode, setMode] = useState<JobInputMode>('paste')
+  const [renderMode, setRenderMode] = useState<RenderMode>('preserve')
   const [text, setText] = useState('')
   const [image, setImage] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -80,22 +82,49 @@ export function JobInput({ disabled, onAnalyze }: Props) {
         setLocalError('Upload a screenshot of the job posting first.')
         return
       }
-      onAnalyze({ mode, image })
+      onAnalyze({ mode, image, renderMode })
       return
     }
     if (text.trim().length < 20) {
       setLocalError('Please enter a bit more detail so we can extract requirements.')
       return
     }
-    onAnalyze({ mode, text: text.trim() })
+    onAnalyze({ mode, text: text.trim(), renderMode })
   }
 
   return (
     <div className="fitline-card">
       <h3 style={{ marginBottom: 8 }}>Analyze a Job</h3>
       <p style={{ marginBottom: 20 }}>
-        Provide the role any way that’s convenient: screenshot, paste, or a short list.
+        Provide the role any way that is convenient: screenshot, paste, or a short list.
       </p>
+
+      <div style={{ marginBottom: 18 }}>
+        <p style={{ marginBottom: 8, fontWeight: 700 }}>How should we handle your resume?</p>
+        <div className="fitline-tabs" role="radiogroup" aria-label="Resume render mode">
+          <button
+            type="button"
+            className={renderMode === 'preserve' ? 'is-active' : ''}
+            disabled={disabled}
+            onClick={() => setRenderMode('preserve')}
+          >
+            Preserve My Layout
+          </button>
+          <button
+            type="button"
+            className={renderMode === 'optimize' ? 'is-active' : ''}
+            disabled={disabled}
+            onClick={() => setRenderMode('optimize')}
+          >
+            Optimize My Resume
+          </button>
+        </div>
+        <p style={{ marginTop: 8, marginBottom: 0, fontSize: 14, color: '#7b878c' }}>
+          {renderMode === 'preserve'
+            ? 'Keep your design. Change only the content that should be tailored. Best with DOCX.'
+            : 'Rebuild into Fitline’s stronger format using your real experience only.'}
+        </p>
+      </div>
 
       <div className="fitline-tabs" role="tablist">
         {TABS.map((tab) => (

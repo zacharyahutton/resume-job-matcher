@@ -1,4 +1,4 @@
-﻿import type { AnalysisResult, FitLabel, MatchStatus, RequirementMatch } from '@/types'
+﻿import type { AnalysisResult, FitLabel, MatchStatus, RenderMode, RequirementMatch } from '@/types'
 import { Button } from '@/components/ui/Button'
 
 function fitClass(label: FitLabel) {
@@ -63,6 +63,7 @@ interface Props {
   onRefreshSuggestions?: () => void
   onDownloadPdf: () => void
   onDownloadDocx: () => void
+  onRenderModeChange?: (mode: RenderMode) => void
 }
 
 export function AnalysisResults({
@@ -72,12 +73,15 @@ export function AnalysisResults({
   onRefreshSuggestions,
   onDownloadPdf,
   onDownloadDocx,
+  onRenderModeChange,
 }: Props) {
-  const { fit, matches, tailoring, tailored, job } = result
+  const { fit, matches, tailoring, tailored, job, renderMode, warnings } = result
 
   const covered = matches.filter((m) => m.status === 'strong')
   const fixThese = matches.filter((m) => m.status === 'partial')
   const leaveOut = matches.filter((m) => m.status === 'missing' || m.status === 'unclear')
+  const mode = renderMode || 'preserve'
+  const noChange = tailoring.noChangeNeeded || []
   const mustFix = [...fixThese, ...leaveOut.filter((m) => m.requirement.priority !== 'preferred')]
 
   const roleLine = [job.title, job.company].filter(Boolean).join(' at ')
@@ -291,24 +295,69 @@ export function AnalysisResults({
 
       <div className="fitline-card">
         <h3 style={{ marginBottom: 8 }}>Get your tailored resume</h3>
+        <p style={{ marginBottom: 12 }}>
+          Review the plan above first. Then rebuild. Intelligence is the same either way. Only the
+          layout strategy changes.
+        </p>
+        <div className="fitline-tabs" style={{ marginBottom: 12 }} role="radiogroup">
+          <button
+            type="button"
+            className={mode === 'preserve' ? 'is-active' : ''}
+            disabled={generating}
+            onClick={() => onRenderModeChange?.('preserve')}
+          >
+            Preserve My Layout
+          </button>
+          <button
+            type="button"
+            className={mode === 'optimize' ? 'is-active' : ''}
+            disabled={generating}
+            onClick={() => onRenderModeChange?.('optimize')}
+          >
+            Optimize My Resume
+          </button>
+        </div>
+        <p style={{ marginBottom: 16, fontSize: 14, color: '#7b878c' }}>
+          {mode === 'preserve'
+            ? 'Same design, better wording. DOCX keeps your Word formatting. PDF keeps content and section order (exact PDF design cannot be cloned).'
+            : 'Fitline classic layout filled only with your experience from this upload.'}
+        </p>
+        {warnings?.length ? (
+          <ul className="fitline-simple-list" style={{ marginBottom: 16 }}>
+            {warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        ) : null}
+        {noChange.length ? (
+          <div style={{ marginBottom: 16 }}>
+            <strong>Already clear (no change needed)</strong>
+            <ul className="fitline-simple-list" style={{ marginTop: 8 }}>
+              {noChange.map((n) => (
+                <li key={`${n.section}-${n.note}`}>
+                  <strong>{n.section}</strong>
+                  {n.note ? ` · ${n.note}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <p style={{ marginBottom: 20 }}>
-          Rebuild rewrites your own resume for this job, keeps the Fitline layout, then
-          automatically downloads a PDF. Your name, contact, and experience stay yours.
+          {tailoring.changes.length
+            ? `${tailoring.changes.length} content change${tailoring.changes.length === 1 ? '' : 's'} planned.`
+            : 'No wording changes planned. You can still export in the selected mode.'}{' '}
+          Rebuild downloads a PDF automatically.
         </p>
         <div className="fitline-actions">
           <Button disabled={generating} onClick={onGenerate}>
-            {generating
-              ? 'Rebuilding…'
-              : tailored?.pdfBlob || tailored?.docxBlob
-                ? 'Rebuild & download'
-                : 'Rebuild & download'}
+            {generating ? 'Rebuilding…' : 'Rebuild & download'}
           </Button>
           {onRefreshSuggestions ? (
             <Button secondary disabled={generating} onClick={onRefreshSuggestions}>
-              Refresh suggestions
+              Refresh plan
             </Button>
           ) : null}
-          {tailored ? (
+          {tailored?.pdfBlob || tailored?.docxBlob ? (
             <>
               <Button secondary onClick={onDownloadPdf}>
                 Download PDF
@@ -323,11 +372,11 @@ export function AnalysisResults({
           <p style={{ marginTop: 16, marginBottom: 0, color: '#15803d', fontSize: 16, fontWeight: 600 }}>
             Ready: {tailored.fileBaseName}.pdf / .docx
           </p>
-        ) : tailored ? (
+        ) : (
           <p style={{ marginTop: 16, marginBottom: 0, color: '#7b878c', fontSize: 16 }}>
-            Draft ready. Click Build & download to create the files.
+            Plan ready. Click Rebuild & download when you want the files.
           </p>
-        ) : null}
+        )}
       </div>
     </div>
   )

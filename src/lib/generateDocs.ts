@@ -9,7 +9,7 @@ import {
 } from 'docx'
 import { jsPDF } from 'jspdf'
 import { saveAs } from 'file-saver'
-import type { TailoredResume } from '@/types'
+import type { RenderMode, TailoredResume } from '@/types'
 import { isDocxMime, normalizeResumeExportText } from '@/lib/preserveFormat'
 import { tailorDocxBlob } from '@/lib/tailorDocx'
 
@@ -148,26 +148,40 @@ function safePdfText(raw: string): string {
     .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u024F]/g, '')
 }
 
-/** Build both downloadable files and attach them to the tailored resume. */
-export async function materializeDownloads(resume: TailoredResume): Promise<TailoredResume> {
+/** Build downloadable files. mode=preserve prefers in-place DOCX; optimize always uses Fitline classic. */
+export async function materializeDownloads(
+  resume: TailoredResume,
+  opts?: { mode?: RenderMode },
+): Promise<TailoredResume> {
+  const mode = opts?.mode || resume.renderMode || 'preserve'
   const base = safeFileBaseName(resume.fileBaseName)
   const withText: TailoredResume = {
     ...resume,
     fileBaseName: base,
     fullText: ensureResumeText(resume),
-    formatPreserved: true,
+    renderMode: mode,
+    formatPreserved: mode === 'preserve',
   }
 
   if (!withText.fullText.trim()) {
     throw new Error('No resume text available to build a download. Re-upload your resume and try again.')
   }
 
-  // Prefer editing the original DOCX in place when available (true format match).
-  // Always rebuild PDF with classic resume layout from the preserved text.
-  const [pdfBlob, docxBlob] = await Promise.all([
-    buildClassicPdfBlob(withText),
-    buildDocxBlob(withText),
-  ])
+  const pdfBlob = await buildClassicPdfBlob(withText)
+  let docxBlob: Blob
+  if (
+    mode === 'preserve' &&
+    withText.sourceBlob &&
+    isDocxMime(withText.sourceMimeType || '', withText.sourceFileName || '')
+  ) {
+    try {
+      docxBlob = await tailorDocxBlob(withText.sourceBlob, withText.appliedChanges || [])
+    } catch {
+      docxBlob = await buildClassicDocxBlob(withText)
+    }
+  } else {
+    docxBlob = await buildClassicDocxBlob(withText)
+  }
 
   return {
     ...withText,
@@ -188,22 +202,15 @@ export async function downloadDocx(resume: TailoredResume): Promise<void> {
 }
 
 async function buildDocxBlob(resume: TailoredResume): Promise<Blob> {
-  // If the user uploaded their own DOCX, edit that file in place (their content + layout).
-  // Never inject the master Zachary template content into someone else's export.
-  const name = (resume.sourceFileName || '').toLowerCase()
-  const isMasterName = name.includes('zachary_hutton_resume') || name === 'zachary-resume.docx'
+  // Preserve: edit the user's own DOCX in place when they uploaded Word.
   try {
-    if (
-      resume.sourceBlob &&
-      isDocxMime(resume.sourceMimeType || '', resume.sourceFileName || '') &&
-      !isMasterName
-    ) {
+    if (resume.sourceBlob && isDocxMime(resume.sourceMimeType || '', resume.sourceFileName || '')) {
       return await tailorDocxBlob(resume.sourceBlob, resume.appliedChanges || [])
     }
   } catch (err) {
     console.error('[Fitline] user DOCX edit failed, falling back to classic layout', err)
   }
-  // Fitline layout shell filled with this user's tailored text.
+  // Optimize / PDF uploads: Fitline classic layout filled with this user's text only.
   return buildClassicDocxBlob(resume)
 }
 

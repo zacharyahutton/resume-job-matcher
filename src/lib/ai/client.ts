@@ -116,6 +116,17 @@ export const resumeProfileSchema = {
   additionalProperties: false,
   properties: {
     name: { type: ['string', 'null'] },
+    contact: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        email: { type: ['string', 'null'] },
+        phone: { type: ['string', 'null'] },
+        location: { type: ['string', 'null'] },
+        links: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['email', 'phone', 'location', 'links'],
+    },
     summary: { type: ['string', 'null'] },
     skills: { type: 'array', items: { type: 'string' } },
     experience: {
@@ -124,12 +135,14 @@ export const resumeProfileSchema = {
         type: 'object',
         additionalProperties: false,
         properties: {
+          id: { type: 'string' },
           title: { type: 'string' },
           company: { type: 'string' },
           dates: { type: ['string', 'null'] },
           bullets: { type: 'array', items: { type: 'string' } },
+          technologies: { type: 'array', items: { type: 'string' } },
         },
-        required: ['title', 'company', 'dates', 'bullets'],
+        required: ['id', 'title', 'company', 'dates', 'bullets', 'technologies'],
       },
     },
     projects: {
@@ -138,11 +151,13 @@ export const resumeProfileSchema = {
         type: 'object',
         additionalProperties: false,
         properties: {
+          id: { type: 'string' },
           name: { type: 'string' },
           description: { type: 'string' },
           technologies: { type: 'array', items: { type: 'string' } },
+          bullets: { type: 'array', items: { type: 'string' } },
         },
-        required: ['name', 'description', 'technologies'],
+        required: ['id', 'name', 'description', 'technologies', 'bullets'],
       },
     },
     education: {
@@ -151,18 +166,33 @@ export const resumeProfileSchema = {
         type: 'object',
         additionalProperties: false,
         properties: {
+          id: { type: 'string' },
           school: { type: 'string' },
           degree: { type: ['string', 'null'] },
           dates: { type: ['string', 'null'] },
         },
-        required: ['school', 'degree', 'dates'],
+        required: ['id', 'school', 'degree', 'dates'],
       },
     },
     certifications: { type: 'array', items: { type: 'string' } },
     tools: { type: 'array', items: { type: 'string' } },
+    otherSections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          heading: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['heading', 'content'],
+      },
+    },
+    extractionNotes: { type: 'array', items: { type: 'string' } },
   },
   required: [
     'name',
+    'contact',
     'summary',
     'skills',
     'experience',
@@ -170,6 +200,8 @@ export const resumeProfileSchema = {
     'education',
     'certifications',
     'tools',
+    'otherSections',
+    'extractionNotes',
   ],
 } as const
 
@@ -179,6 +211,7 @@ export const jobExtractionSchema = {
   properties: {
     title: { type: ['string', 'null'] },
     company: { type: ['string', 'null'] },
+    responsibilities: { type: 'array', items: { type: 'string' } },
     requirements: {
       type: 'array',
       items: {
@@ -212,7 +245,7 @@ export const jobExtractionSchema = {
       },
     },
   },
-  required: ['title', 'company', 'requirements'],
+  required: ['title', 'company', 'responsibilities', 'requirements'],
 } as const
 
 export const matchingSchema = {
@@ -273,8 +306,9 @@ export const tailoringSchema = {
           why: { type: 'string' },
           section: { type: ['string', 'null'] },
           action: { type: 'string', enum: ['rewrite', 'trim'] },
+          evidence: { type: 'string' },
         },
-        required: ['original', 'tailored', 'why', 'section', 'action'],
+        required: ['original', 'tailored', 'why', 'section', 'action', 'evidence'],
       },
     },
     notAdding: {
@@ -302,28 +336,20 @@ export const tailoringSchema = {
       },
     },
     emphasisNotes: { type: 'array', items: { type: 'string' } },
-    tailoredFullText: { type: 'string' },
-    sections: {
+    noChangeNeeded: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
         properties: {
-          heading: { type: 'string' },
-          content: { type: 'string' },
+          section: { type: 'string' },
+          note: { type: 'string' },
         },
-        required: ['heading', 'content'],
+        required: ['section', 'note'],
       },
     },
   },
-  required: [
-    'changes',
-    'notAdding',
-    'toRemove',
-    'emphasisNotes',
-    'tailoredFullText',
-    'sections',
-  ],
+  required: ['changes', 'notAdding', 'toRemove', 'emphasisNotes', 'noChangeNeeded'],
 } as const
 
 export const FitResultZod = z.object({

@@ -17,6 +17,9 @@ export type RequirementCategory =
   | 'tool'
   | 'other'
 
+/** Preserve = keep user's design. Optimize = Fitline classic layout. */
+export type RenderMode = 'preserve' | 'optimize'
+
 export interface StoredResume {
   id: string
   fileName: string
@@ -26,29 +29,75 @@ export interface StoredResume {
   blob: Blob
 }
 
+export interface ResumeContact {
+  email?: string
+  phone?: string
+  location?: string
+  links: string[]
+}
+
+export interface ResumeBullet {
+  id: string
+  text: string
+  technologies: string[]
+}
+
+export interface ResumeExperience {
+  id: string
+  title: string
+  company: string
+  dates?: string
+  bullets: ResumeBullet[]
+  technologies: string[]
+}
+
+export interface ResumeProject {
+  id: string
+  name: string
+  description: string
+  technologies: string[]
+  bullets: string[]
+}
+
+export interface ResumeEducation {
+  id: string
+  school: string
+  degree?: string
+  dates?: string
+}
+
+/** Canonical resume model. rawText is always the source of truth for evidence. */
 export interface ResumeProfile {
   rawText: string
   name?: string
+  contact: ResumeContact
   summary?: string
   skills: string[]
   experience: Array<{
+    id?: string
     title: string
     company: string
     dates?: string
     bullets: string[]
+    technologies?: string[]
   }>
   projects: Array<{
+    id?: string
     name: string
     description: string
     technologies: string[]
+    bullets?: string[]
   }>
   education: Array<{
+    id?: string
     school: string
     degree?: string
     dates?: string
   }>
   certifications: string[]
   tools: string[]
+  otherSections: Array<{ heading: string; content: string }>
+  extractionNotes: string[]
 }
 
 export interface JobRequirement {
@@ -62,6 +111,7 @@ export interface JobExtraction {
   title?: string
   company?: string
   rawText: string
+  responsibilities: string[]
   requirements: JobRequirement[]
 }
 
@@ -76,13 +126,9 @@ export interface FitAssessment {
   score: number
   label: FitLabel
   summary: string
-  /** Why they would be a fit for this role. */
   whyFit: string
-  /** What is holding them back. */
   gaps: string
-  /** Direct reasons they would get an interview / be competitive. */
   wouldBeFit: string[]
-  /** Direct reasons they would not be a fit (or would struggle). */
   wouldNotBeFit: string[]
   requiredMatched: number
   requiredPartial: number
@@ -97,8 +143,8 @@ export interface TailoringChange {
   tailored: string
   why: string
   section?: string
-  /** rewrite = reword in place; trim = shorten/de-emphasize. */
   action?: 'rewrite' | 'trim'
+  evidence?: string
 }
 
 export interface NotAddingItem {
@@ -111,13 +157,18 @@ export interface RemoveSuggestion {
   reason: string
 }
 
+export interface NoChangeNote {
+  section: string
+  note: string
+}
+
 export interface TailoringPlan {
   changes: TailoringChange[]
-  /** Job asks the resume cannot honestly support. */
   notAdding: NotAddingItem[]
-  /** Lines or themes to de-emphasize or drop for this application. */
   toRemove: RemoveSuggestion[]
   emphasisNotes: string[]
+  /** Lines that already match the job well — leave them alone. */
+  noChangeNeeded: NoChangeNote[]
 }
 
 export interface TailoredResume {
@@ -127,15 +178,13 @@ export interface TailoredResume {
     heading: string
     content: string
   }>
-  /** True when fullText was built by editing the original resume in place. */
   formatPreserved?: boolean
-  /** Changes applied (or intended) for in-place DOCX edits. */
+  renderMode?: RenderMode
   appliedChanges?: TailoringChange[]
+  skippedChanges?: TailoringChange[]
   sourceFileName?: string
   sourceMimeType?: string
-  /** Original uploaded file; used to keep DOCX layout on download. */
   sourceBlob?: Blob
-  /** Pre-built downloadable files (created when you click Build). */
   pdfBlob?: Blob
   docxBlob?: Blob
   builtAt?: number
@@ -148,6 +197,8 @@ export interface AnalysisResult {
   fit: FitAssessment
   tailoring: TailoringPlan
   tailored?: TailoredResume
+  renderMode: RenderMode
+  warnings: string[]
   analyzedAt: number
 }
 
@@ -166,12 +217,12 @@ export type AnalysisStage =
 
 export const STAGE_LABELS: Record<AnalysisStage, string> = {
   idle: 'Ready',
-  extracting_resume: 'Scanning every line of your resume…',
+  extracting_resume: 'Understanding every section of your resume…',
   extracting_job: 'Pulling every requirement from the job…',
-  matching: 'Comparing your experience to what they want…',
+  matching: 'Comparing your evidence to what they want…',
   assessing_fit: 'Deciding fit, gaps, and interview odds…',
-  planning_tailor: 'Planning exact wording changes in your format…',
-  generating: 'Applying edits and rebuilding your resume…',
+  planning_tailor: 'Deciding what to change (and what to leave alone)…',
+  generating: 'Building your downloadable resume…',
   done: 'Done',
   error: 'Something went wrong',
 }

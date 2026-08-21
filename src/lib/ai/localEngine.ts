@@ -201,6 +201,15 @@ export function localTailor(
         'Bullets were rewritten to mirror the job language where your experience already supports it.',
         'Nothing unsupported was added.',
       ],
+      noChangeNeeded:
+        changes.length === 0
+          ? [
+              {
+                section: 'Overall',
+                note: 'No change needed — existing lines already communicate the relevant experience clearly.',
+              },
+            ]
+          : [],
     },
     tailored: {
       fullText,
@@ -294,17 +303,30 @@ export function localExtractResume(rawText: string): ResumeProfile {
   const name = lines[0]?.length < 60 ? lines[0] : undefined
   const skills = extractSkillsFromText(rawText)
   const bullets = splitBullets(rawText)
+  const email = rawText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]
+  const phone = rawText.match(/\+?\d[\d\s().-]{8,}\d/)?.[0]
+  const links = Array.from(
+    rawText.matchAll(/(?:https?:\/\/|www\.|github\.com\/|linkedin\.com\/)[^\s|]+/gi),
+  ).map((m) => m[0])
 
   return {
     rawText,
     name,
+    contact: {
+      email,
+      phone,
+      location: undefined,
+      links: [...new Set(links)].slice(0, 8),
+    },
     summary: bullets[0],
     skills,
     experience: [
       {
+        id: 'exp-1',
         title: 'Experience (from resume)',
         company: 'As listed',
         bullets: bullets.slice(0, 12),
+        technologies: skills.slice(0, 8),
       },
     ],
     projects: [],
@@ -313,6 +335,8 @@ export function localExtractResume(rawText: string): ResumeProfile {
     tools: skills.filter((s) =>
       ['Git', 'Docker', 'Aws', 'Figma', 'Jest', 'Cypress'].includes(s),
     ),
+    otherSections: [],
+    extractionNotes: ['Local parse used (no API key or AI fallback).'],
   }
 }
 
@@ -386,6 +410,7 @@ export function localExtractJob(rawText: string): JobExtraction {
     title,
     company: undefined,
     rawText,
+    responsibilities: [],
     requirements: requirements.slice(0, 18),
   }
 }

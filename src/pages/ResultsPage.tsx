@@ -79,7 +79,9 @@ export function ResultsPage() {
       setResult(next)
       setStage('done')
       setReadyNote(
-        `Ready. ${next.tailoring.changes.length} edits applied. PDF downloading now.`,
+        next.tailoring.changes.length
+          ? `Ready. ${next.tailoring.changes.length} edits applied. PDF downloading now.`
+          : 'Ready. No wording changes were needed. PDF downloading now.',
       )
 
       try {
@@ -122,7 +124,9 @@ export function ResultsPage() {
       if (!result.tailored) throw new Error('Build the tailored resume first.')
       let tailored = result.tailored
       if (!tailored.pdfBlob) {
-        tailored = await materializeDownloads(tailored)
+        tailored = await materializeDownloads(tailored, {
+          mode: result.renderMode || 'preserve',
+        })
         setResult({ ...result, tailored })
       }
       await downloadPdf(tailored)
@@ -137,7 +141,9 @@ export function ResultsPage() {
       if (!result.tailored) throw new Error('Build the tailored resume first.')
       let tailored = result.tailored
       if (!tailored.docxBlob) {
-        tailored = await materializeDownloads(tailored)
+        tailored = await materializeDownloads(tailored, {
+          mode: result.renderMode || 'preserve',
+        })
         setResult({ ...result, tailored })
       }
       await downloadDocx(tailored)
@@ -175,6 +181,7 @@ export function ResultsPage() {
               onRefreshSuggestions={() => void onRefreshSuggestions()}
               onDownloadPdf={() => void onDownloadPdf()}
               onDownloadDocx={() => void onDownloadDocx()}
+              onRenderModeChange={(mode) => setResult({ ...result, renderMode: mode })}
             />
           </div>
         )}

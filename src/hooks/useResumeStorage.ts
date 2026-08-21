@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import type { StoredResume } from '@/types'
 import { getResume, removeResume, saveResume } from '@/lib/storage'
 import { extractTextFromFile, isSupportedResumeFile } from '@/lib/parseResume'
-import { loadResumeTemplate, TEMPLATE_FILE_NAME, TEMPLATE_MIME } from '@/lib/resumeTemplate'
 
+/**
+ * Resume storage is per-browser only. Never seed another person's resume
+ * (including Zachary's) into empty devices.
+ */
 export function useResumeStorage() {
   const [resume, setResume] = useState<StoredResume | null>(null)
   const [loading, setLoading] = useState(true)
@@ -11,37 +14,34 @@ export function useResumeStorage() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
 
-  /** Optional demo seed only when nothing is saved yet. */
-  const seedDemoIfEmpty = useCallback(async () => {
-    const template = await loadResumeTemplate()
-    return saveResume({
-      fileName: TEMPLATE_FILE_NAME,
-      mimeType: TEMPLATE_MIME,
-      savedAt: Date.now(),
-      text: template.text,
-      blob: template.blob,
-    })
-  }, [])
-
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      let stored = await getResume()
-      if (!stored?.blob || !stored.text?.trim()) {
-        stored = await seedDemoIfEmpty()
+      const stored = await getResume()
+      // Drop accidental demo seeds that contain Zachary's personal resume.
+      if (
+        stored &&
+        (/zachary_hutton_resume/i.test(stored.fileName) ||
+          /zachary-resume/i.test(stored.fileName) ||
+          (/zachary\s+hutton/i.test(stored.text || '') &&
+            /hzach577/i.test(stored.text || '') &&
+            /seed|template|demo/i.test(stored.fileName)))
+      ) {
+        // Only clear if it looks like the auto-seeded template filename
+        if (/zachary_hutton_resume|zachary-resume/i.test(stored.fileName)) {
+          await removeResume()
+          setResume(null)
+          return
+        }
       }
       setResume(stored)
     } catch {
-      try {
-        const seeded = await seedDemoIfEmpty()
-        setResume(seeded)
-      } catch {
-        setError('Could not load a resume on this device.')
-      }
+      setError('Could not read the saved resume from this device.')
+      setResume(null)
     } finally {
       setLoading(false)
     }
-  }, [seedDemoIfEmpty])
+  }, [])
 
   useEffect(() => {
     void refresh()

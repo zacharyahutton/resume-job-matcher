@@ -73,9 +73,10 @@ export function sanitizeChanges(changes: TailoringChange[]): TailoringChange[] {
       ...c,
       // Keep original glyphs so find-and-replace still hits the uploaded text.
       original: (c.original || '').trim(),
-      tailored: correctKnownResumeTypos(cleanTailoredLeak(c.tailored || '')).trim(),
+      tailored: cleanTailoredLeak(c.tailored || '').trim(),
       why: (c.why || '').trim(),
       action: c.action === 'trim' ? ('trim' as const) : ('rewrite' as const),
+      evidence: c.evidence,
     }))
     .filter((c) => {
       if (!c.original || !c.tailored || c.original === c.tailored) return false

@@ -122,9 +122,9 @@ export function ResumePanel({
             if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click()
           }}
         >
-          <h3 style={{ marginBottom: 8 }}>Upload your resume once</h3>
+          <h3 style={{ marginBottom: 8 }}>Upload your resume</h3>
           <p style={{ marginBottom: 20 }}>
-            PDF, DOCX, TXT, or a clear image. We’ll extract the text automatically.
+            PDF, DOCX, TXT, or a clear image. Nothing is preloaded. Your file stays on this device only.
           </p>
           <Button size="sm" disabled={busy}>
             {busy ? 'Reading…' : 'Choose File'}

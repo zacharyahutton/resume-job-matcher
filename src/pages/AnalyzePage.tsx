@@ -8,8 +8,7 @@ import { useResumeStorage } from '@/hooks/useResumeStorage'
 import { useAnalysisResult } from '@/hooks/useAnalysisResult'
 import { extractTextFromImage } from '@/lib/ocr'
 import { runAnalysisPipeline } from '@/lib/ai/pipeline'
-import { downloadPdf } from '@/lib/generateDocs'
-import type { AnalysisStage, JobInputMode } from '@/types'
+import type { AnalysisStage, JobInputMode, RenderMode } from '@/types'
 
 const STEPS = [
   { n: 1, label: 'Resume' },
@@ -38,11 +37,12 @@ export function AnalyzePage() {
     mode: JobInputMode
     text?: string
     image?: File
+    renderMode: RenderMode
   }) => {
     setRunError(null)
 
     if (!resume) {
-      setRunError('Save a resume first (step 1).')
+      setRunError('Upload your resume first (step 1).')
       return
     }
 
@@ -63,6 +63,8 @@ export function AnalyzePage() {
           mimeType: resume.mimeType,
           blob: resume.blob,
         },
+        renderMode: payload.renderMode || 'preserve',
+        materialize: false,
         onProgress: (s, d) => {
           setStage(s)
           setDetail(d)
@@ -72,13 +74,6 @@ export function AnalyzePage() {
       setResult(result)
       setStage('done')
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-      if (result.tailored?.pdfBlob || result.tailored?.fullText) {
-        try {
-          await downloadPdf(result.tailored)
-        } catch {
-          // Browser may block auto-download; results page still has the button.
-        }
-      }
       navigate('/results')
     } catch (e) {
       setStage('error')

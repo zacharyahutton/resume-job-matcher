@@ -46,50 +46,91 @@ async function extractResumeProfile(rawText: string): Promise<ResumeProfile> {
   try {
     const data = await callOpenAIJson<{
       name: string | null
+      contact: {
+        email: string | null
+        phone: string | null
+        location: string | null
+        links: string[]
+      }
       summary: string | null
       skills: string[]
       experience: Array<{
+        id: string
         title: string
         company: string
         dates: string | null
         bullets: string[]
+        technologies: string[]
       }>
-      projects: Array<{ name: string; description: string; technologies: string[] }>
-      education: Array<{ school: string; degree: string | null; dates: string | null }>
+      projects: Array<{
+        id: string
+        name: string
+        description: string
+        technologies: string[]
+        bullets: string[]
+      }>
+      education: Array<{
+        id: string
+        school: string
+        degree: string | null
+        dates: string | null
+      }>
       certifications: string[]
       tools: string[]
+      otherSections: Array<{ heading: string; content: string }>
+      extractionNotes: string[]
     }>({
       schemaName: 'resume_profile',
       schema: resumeProfileSchema,
       temperature: 0,
-      maxTokens: 8000,
+      maxTokens: 10000,
       system: [
-        'Thoroughly scan the FULL resume text.',
-        'Extract EVERY role, bullet, skill, tool, project, school, and certification that appears.',
-        'Copy bullet wording closely so later find-and-replace can use exact lines.',
-        'Never invent fields. Use null/empty when unknown.',
-        'Be exhaustive. Missing a real bullet hurts the candidate.',
+        'Build a thorough Canonical Resume Model from the FULL resume text.',
+        'Extract contact, summary, every role with every bullet, projects, education, skills, tools, certifications, and other sections.',
+        'Copy bullet and summary wording closely so later edits can find exact strings in the original.',
+        'List technologies only when they appear in that entry or nearby text. Never invent.',
+        'Ids like exp-1, proj-1, edu-1. extractionNotes for unclear parsing only.',
+        'Thorough enough for good decisions — not a bloated schema dump.',
       ].join(' '),
-      user: `Resume text (scan every line):\n\n${rawText.slice(0, 22000)}`,
+      user: `Resume text (understand everything present):\n\n${rawText.slice(0, 24000)}`,
     })
 
     return {
       rawText,
       name: nullToUndef(data.name),
+      contact: {
+        email: nullToUndef(data.contact?.email),
+        phone: nullToUndef(data.contact?.phone),
+        location: nullToUndef(data.contact?.location),
+        links: data.contact?.links || [],
+      },
       summary: nullToUndef(data.summary),
       skills: data.skills || [],
       experience: (data.experience || []).map((e) => ({
-        ...e,
+        id: e.id,
+        title: e.title,
+        company: e.company,
         dates: nullToUndef(e.dates),
+        bullets: e.bullets || [],
+        technologies: e.technologies || [],
       })),
-      projects: data.projects || [],
+      projects: (data.projects || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        technologies: p.technologies || [],
+        bullets: p.bullets || [],
+      })),
       education: (data.education || []).map((e) => ({
-        ...e,
+        id: e.id,
+        school: e.school,
         degree: nullToUndef(e.degree),
         dates: nullToUndef(e.dates),
       })),
       certifications: data.certifications || [],
       tools: data.tools || [],
+      otherSections: data.otherSections || [],
+      extractionNotes: data.extractionNotes || [],
     }
   } catch {
     return localExtractResume(rawText)
@@ -103,6 +144,7 @@ async function extractJob(rawText: string): Promise<JobExtraction> {
     const data = await callOpenAIJson<{
       title: string | null
       company: string | null
+      responsibilities: string[]
       requirements: JobExtraction['requirements']
     }>({
       schemaName: 'job_extraction',
@@ -110,20 +152,21 @@ async function extractJob(rawText: string): Promise<JobExtraction> {
       temperature: 0,
       maxTokens: 7000,
       system: [
-        'Thoroughly extract EVERY meaningful requirement from the job posting.',
-        'Cover must-haves and nice-to-haves: skills, tools, years, education, certifications, responsibilities, collaboration, industry.',
-        'Mark priority carefully: required vs preferred vs unspecified.',
-        'Split compound bullets into separate requirements when they ask for distinct things.',
-        'Aim for 10 to 25 precise requirements. Do not invent anything absent from the text.',
-        'Give each requirement a stable id like req-1, req-2.',
+        'Extract a Job Model from the posting.',
+        'List responsibilities separately from requirements.',
+        'Cover must-haves and nice-to-haves: skills, tools, years, education, certifications, collaboration.',
+        'Mark priority: required vs preferred vs unspecified.',
+        'Split compound asks. Aim for 10 to 25 precise requirements. Never invent.',
+        'Ids like req-1, req-2.',
       ].join(' '),
-      user: `Job posting / requirements (extract everything they want):\n\n${rawText.slice(0, 18000)}`,
+      user: `Job posting:\n\n${rawText.slice(0, 18000)}`,
     })
 
     return {
       title: nullToUndef(data.title),
       company: nullToUndef(data.company),
       rawText,
+      responsibilities: data.responsibilities || [],
       requirements: data.requirements || [],
     }
   } catch {
@@ -380,41 +423,46 @@ async function planAndGenerate(
           why: string
           section: string | null
           action: 'rewrite' | 'trim'
+          evidence: string
         }>
         notAdding: Array<{ item: string; reason: string }>
         toRemove: Array<{ item: string; reason: string }>
         emphasisNotes: string[]
-        tailoredFullText: string
-        sections: Array<{ heading: string; content: string }>
+        noChangeNeeded: Array<{ section: string; note: string }>
       }>({
         schemaName: 'tailoring_plan',
         schema: tailoringSchema,
         temperature: 0,
         maxTokens: 10000,
         system: [
-          'You are carefully editing the ORIGINAL resume for ONE specific job posting.',
-          'Format preservation is mandatory: find-and-replace only. Never invent a new template.',
-          'Each "original" MUST be an exact contiguous substring copied from originalResumeText.',
-          'CRITICAL: Every change MUST be a REAL rewrite. Adding a period, fixing spaces, or keeping the same words is FORBIDDEN and will be rejected.',
-          'If you cannot make a substantive wording change for a line, omit it from changes entirely.',
+          'Create a Tailoring Plan for ONE job. Do NOT rewrite for the sake of rewriting.',
+          'If a bullet already clearly communicates React/TypeScript/REST (or whatever the job needs), put it in noChangeNeeded and leave it out of changes.',
+          'Each change.original MUST be an exact contiguous substring from originalResumeText.',
+          'Every change must be a REAL wording improvement grounded in resume evidence + job needs. Period-only edits are forbidden.',
+          'evidence must quote what on the resume supports the new wording. Never invent employers, years, skills, or metrics.',
           deep || strict
-            ? 'DEEP TAILOR MODE: produce 10 to 18 substantive changes. Mirror the job description language aggressively but honestly. Rewrite the summary and experience/project bullets so a recruiter scanning for THIS job sees an obvious match.'
-            : 'Produce 5 to 12 substantive high-value changes when evidence exists.',
-          'Pull keywords and phrases from jobDescriptionText that already map to real resume evidence. Weave them into existing bullets without inventing employers, years, or skills.',
-          'Example of BAD change: same sentence + period. Example of GOOD change: move React/Next.js/API language from the posting into a bullet that already proves that work.',
-          'Only edit experience/project/summary body lines. NEVER edit name, contact, emails, phones, URLs, LinkedIn/GitHub/Portfolio, section headings, or dates.',
-          'action=rewrite for stronger job-specific wording. action=trim to shorten off-target lines.',
-          'Natural professional English. No junk phrases. No « » characters.',
-          'notAdding: every missing must-have you refuse to invent, with why.',
-          'toRemove: 3 to 8 themes to de-emphasize for THIS application, with why.',
-          'tailoredFullText = originalResumeText with only those swaps applied.',
+            ? 'When evidence supports better framing for THIS job, produce substantive rewrites (often 4 to 12). Zero changes is OK if the resume already fits.'
+            : 'Prefer 3 to 10 high-value changes when needed. Zero is OK when already clear.',
+          'Only edit summary/experience/project body lines. Never edit name, contact, URLs, headings, or dates.',
+          'action=rewrite or trim. notAdding = missing must-haves you refuse to invent. toRemove = off-target themes to de-emphasize.',
         ].join(' '),
         user: JSON.stringify({
           originalResumeText: resume.rawText.slice(0, 18000),
+          resumeModel: {
+            name: resume.name,
+            contact: resume.contact,
+            summary: resume.summary,
+            skills: resume.skills,
+            experience: resume.experience,
+            projects: resume.projects,
+            education: resume.education,
+            tools: resume.tools,
+          },
           jobTitle: job.title,
           company: job.company,
           jobDescriptionText: job.rawText.slice(0, deep || strict ? 9000 : 4000),
-          strongMatches: strong.map((m) => m.requirement.text),
+          responsibilities: job.responsibilities,
+          strongMatches: strong.map((m) => ({ need: m.requirement.text, evidence: m.evidence })),
           partialMatches: partial.map((m) => ({
             need: m.requirement.text,
             evidence: m.evidence,
@@ -424,8 +472,6 @@ async function planAndGenerate(
             need: m.requirement.text,
             priority: m.requirement.priority,
           })),
-          skillsOnResume: resume.skills,
-          toolsOnResume: resume.tools,
           mode,
           strict,
         }).slice(0, 28000),
@@ -441,12 +487,14 @@ async function planAndGenerate(
           why: c.why,
           section: nullToUndef(c.section),
           action: c.action === 'trim' ? ('trim' as const) : ('rewrite' as const),
+          evidence: c.evidence,
         })),
       ),
     ).filter((c) => !isTrivialEdit(c.original, c.tailored))
 
-    // If the model returned fake/no-op edits, force one strict retry
-    if (applicable.length < (deep ? 4 : 2)) {
+    const noChange = data.noChangeNeeded || []
+    // Retry only when we expected edits (partial gaps) but got nothing usable and no "leave alone" notes
+    if (applicable.length === 0 && noChange.length === 0 && (partial.length > 0 || missing.length > 0)) {
       data = await runTailorCall(true)
       applicable = filterApplicableChanges(
         resume.rawText,
@@ -457,15 +505,15 @@ async function planAndGenerate(
             why: c.why,
             section: nullToUndef(c.section),
             action: c.action === 'trim' ? ('trim' as const) : ('rewrite' as const),
+            evidence: c.evidence,
           })),
         ),
       ).filter((c) => !isTrivialEdit(c.original, c.tailored))
     }
 
-    if (deep && applicable.length < 3) {
-      // Last resort: honest local rewriter that still makes real wording changes
+    if (deep && applicable.length === 0 && (data.noChangeNeeded || []).length === 0) {
       const local = localTailor(resume.rawText, job, matches)
-      if (local.plan.changes.length >= applicable.length) {
+      if (local.plan.changes.length > 0) {
         return {
           plan: local.plan,
           tailored: buildPreservedTailored(
@@ -483,6 +531,7 @@ async function planAndGenerate(
       notAdding: data.notAdding || [],
       toRemove: data.toRemove || [],
       emphasisNotes: data.emphasisNotes || [],
+      noChangeNeeded: data.noChangeNeeded || [],
     }
 
     const tailored = buildPreservedTailored(
@@ -533,15 +582,23 @@ export async function runAnalysisPipeline(args: {
   jobText: string
   source?: ResumeSourceMeta
   onProgress?: ProgressFn
-  /** When true (default), build PDF/DOCX blobs after the edit plan is ready. */
+  renderMode?: import('@/types').RenderMode
+  /** When true, build PDF/DOCX after the plan. Default false so the user reviews the plan first. */
   materialize?: boolean
 }): Promise<AnalysisResult> {
-  const { resumeText, jobText, source, onProgress, materialize = true } = args
+  const {
+    resumeText,
+    jobText,
+    source,
+    onProgress,
+    renderMode = 'preserve',
+    materialize = false,
+  } = args
 
-  onProgress?.('extracting_resume', 'Reading every section of your resume…')
+  onProgress?.('extracting_resume', 'Understanding every section of your resume…')
   const userText = (resumeText || '').trim()
   if (userText.length < 40) {
-    throw new Error('Upload or paste a fuller resume first. Fitline needs your content, not a blank file.')
+    throw new Error('Upload your resume first. Fitline needs your content.')
   }
 
   const resumeProfile = await extractResumeProfile(userText)
@@ -561,13 +618,13 @@ export async function runAnalysisPipeline(args: {
     )
   }
 
-  onProgress?.('matching', 'Checking each requirement against your real experience…')
+  onProgress?.('matching', 'Comparing your evidence to what they want…')
   const matches = await matchRequirements(job, resumeProfile)
 
-  onProgress?.('assessing_fit', 'Writing why you would or would not be a fit…')
+  onProgress?.('assessing_fit', 'Deciding fit, gaps, and interview odds…')
   const fit = await assessFit(job, matches, resumeProfile)
 
-  onProgress?.('planning_tailor', 'Planning line edits on your content in the Fitline layout…')
+  onProgress?.('planning_tailor', 'Deciding what to change and what to leave alone…')
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     job,
@@ -576,10 +633,22 @@ export async function runAnalysisPipeline(args: {
     'deep',
   )
 
-  let finalTailored = withUserExportSource(tailored, exportSource)
+  const warnings: string[] = []
+  if (renderMode === 'preserve' && !isDocxSource(exportSource.fileName, exportSource.mimeType)) {
+    warnings.push(
+      'Preserve works best with DOCX. PDF keeps your content and section order; exact PDF design cannot be cloned.',
+    )
+  }
+
+  let finalTailored: TailoredResume = {
+    ...withUserExportSource(tailored, exportSource),
+    renderMode,
+    formatPreserved: renderMode === 'preserve',
+  }
+
   if (materialize) {
-    onProgress?.('generating', 'Building your tailored PDF (and DOCX)…')
-    finalTailored = await materializeDownloads(finalTailored)
+    onProgress?.('generating', 'Building your downloadable resume…')
+    finalTailored = await materializeDownloads(finalTailored, { mode: renderMode })
   }
 
   onProgress?.('done')
@@ -591,8 +660,16 @@ export async function runAnalysisPipeline(args: {
     fit,
     tailoring: plan,
     tailored: finalTailored,
+    renderMode,
+    warnings,
     analyzedAt: Date.now(),
   }
+}
+
+function isDocxSource(fileName?: string, mimeType?: string) {
+  const name = (fileName || '').toLowerCase()
+  const mime = (mimeType || '').toLowerCase()
+  return name.endsWith('.docx') || mime.includes('wordprocessingml')
 }
 
 /** Rebuild downloadable resume from the existing edit plan (same every time). */
@@ -633,6 +710,7 @@ export async function deepRebuildTailoredResume(
     mimeType: result.tailored?.sourceMimeType,
     blob: result.tailored?.sourceBlob,
   }
+  const mode = result.renderMode || 'preserve'
 
   const resumeProfile = {
     ...result.resumeProfile,
@@ -645,7 +723,7 @@ export async function deepRebuildTailoredResume(
   onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
   const fit = await assessFit(result.job, matches, resumeProfile)
 
-  onProgress?.('planning_tailor', 'Rewriting your lines for this job in the Fitline layout…')
+  onProgress?.('planning_tailor', 'Refreshing the tailoring plan for this job…')
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     result.job,
@@ -654,9 +732,13 @@ export async function deepRebuildTailoredResume(
     'deep',
   )
 
-  onProgress?.('generating', 'Exporting your tailored PDF…')
-  const withSource = withUserExportSource(tailored, exportSource)
-  const materialized = await materializeDownloads(withSource)
+  onProgress?.('generating', mode === 'preserve' ? 'Applying edits to your layout…' : 'Building Fitline layout…')
+  const withSource = {
+    ...withUserExportSource(tailored, exportSource),
+    renderMode: mode,
+    formatPreserved: mode === 'preserve',
+  }
+  const materialized = await materializeDownloads(withSource, { mode })
 
   onProgress?.('done')
   return {
@@ -666,6 +748,7 @@ export async function deepRebuildTailoredResume(
     fit,
     tailoring: plan,
     tailored: materialized,
+    renderMode: mode,
   }
 }
 
