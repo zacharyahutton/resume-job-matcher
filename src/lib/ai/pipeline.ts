@@ -31,7 +31,23 @@ function requireGroqForDeepWork() {
   }
 }
 
-/** Prefer a fresh DOCX extract over stale/corrupt stored PDF text. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+    promise.then(
+      (v) => {
+        clearTimeout(t)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(t)
+        reject(e)
+      },
+    )
+  })
+}
+
+/** Prefer stored upload text. Only re-parse the blob when text is missing or damaged. */
 async function resolveResumeText(
   fallback: string,
   source?: ResumeSourceMeta,
@@ -40,23 +56,27 @@ async function resolveResumeText(
   const warnings: string[] = []
   let text = normalizeResumeExportText((fallback || '').trim())
 
-  if (source?.blob && isDocxSource(source.fileName, source.mimeType)) {
+  // Upload already ran mammoth/PDF extract. Re-reading IndexedDB blobs often hangs
+  // in Chrome, so skip whenever we already have usable text.
+  if (text.length >= 40 && !looksBadlyExtracted(text)) {
+    return { text, warnings }
+  }
+
+  if (source?.blob) {
+    const label = isDocxSource(source.fileName, source.mimeType)
+      ? 'Re-reading your DOCX…'
+      : 'Re-reading your resume file…'
     try {
-      onProgress?.('extracting_resume', 'Re-reading your DOCX for clean text…')
-      text = await extractTextFromBlob(source.blob, source.fileName, source.mimeType, (m) =>
-        onProgress?.('extracting_resume', m),
+      onProgress?.('extracting_resume', label)
+      text = await withTimeout(
+        extractTextFromBlob(source.blob, source.fileName, source.mimeType),
+        8000,
+        'Resume re-read',
       )
-    } catch {
-      warnings.push('Could not re-read DOCX. Using the text saved from your last upload.')
-    }
-  } else if (source?.blob && looksBadlyExtracted(text)) {
-    try {
-      onProgress?.('extracting_resume', 'Re-reading your file to fix damaged PDF text…')
-      text = await extractTextFromBlob(source.blob, source.fileName, source.mimeType, (m) =>
-        onProgress?.('extracting_resume', m),
-      )
-    } catch {
-      // keep cleaned fallback
+      text = normalizeResumeExportText(text)
+    } catch (err) {
+      console.warn('[Fitline] resume re-read skipped', err)
+      warnings.push('Using the text saved from your last upload.')
     }
   }
 

@@ -104,14 +104,25 @@ export async function extractTextFromBlob(
     name.endsWith('.docx') ||
     type.includes('msword')
   ) {
-    onProgress?.('Re-reading your DOCX for clean text…')
-    return extractDocxText(await blob.arrayBuffer())
+    onProgress?.('Reading DOCX…')
+    const buffer = await Promise.race([
+      blob.arrayBuffer(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('DOCX buffer timed out')), 5000),
+      ),
+    ])
+    return extractDocxText(buffer)
   }
   return extractTextFromFile(file, onProgress)
 }
 
 async function extractDocxText(arrayBuffer: ArrayBuffer): Promise<string> {
-  const result = await mammoth.extractRawText({ arrayBuffer })
+  const result = await Promise.race([
+    mammoth.extractRawText({ arrayBuffer }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('DOCX read timed out')), 8000),
+    ),
+  ])
   const text = cleanText(result.value)
   if (!text) throw new Error('Could not read text from this DOCX file.')
   return normalizeResumeExportText(text)
