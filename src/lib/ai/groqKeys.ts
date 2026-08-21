@@ -17,7 +17,8 @@ let roundRobin = 0
 
 function pushKey(bag: string[], value?: string | null) {
   if (!value) return
-  for (const part of String(value).split(/[,\s\n]+/)) {
+  // Prefer comma / newline separators. Do not split on spaces inside values.
+  for (const part of String(value).split(/[,\n]+/)) {
     const t = part.trim()
     if (t.length > 10 && !bag.includes(t)) bag.push(t)
   }

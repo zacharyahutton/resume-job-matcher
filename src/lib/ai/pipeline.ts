@@ -129,7 +129,11 @@ export async function runAnalysisPipeline(args: {
     blob: source?.blob,
   }
 
+  // Pace Groq calls: free-tier TPM is org-wide (~8k/min). Bursting 5 stages fails.
+  const pace = () => new Promise((r) => setTimeout(r, 1800))
+
   onProgress?.('extracting_job', 'Listing every must-have and nice-to-have…')
+  await pace()
   const job = await extractJob(jobText)
   if (!job.requirements.length) {
     throw new Error(
@@ -138,12 +142,15 @@ export async function runAnalysisPipeline(args: {
   }
 
   onProgress?.('matching', 'Comparing your evidence to what they want…')
+  await pace()
   const matches = await matchRequirements(job, resumeProfile)
 
   onProgress?.('assessing_fit', 'Deciding fit, gaps, and interview odds…')
+  await pace()
   const fit = await assessFit(job, matches, resumeProfile)
 
   onProgress?.('planning_tailor', 'Deciding what to change and what to leave alone…')
+  await pace()
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     job,
@@ -265,13 +272,18 @@ export async function deepRebuildTailoredResume(
     rawText: text,
   }
 
+  const pace = () => new Promise((r) => setTimeout(r, 1800))
+
   onProgress?.('matching', 'Re-checking every requirement against your resume…')
+  await pace()
   const matches = await matchRequirements(result.job, resumeProfile)
 
   onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
+  await pace()
   const fit = await assessFit(result.job, matches, resumeProfile)
 
   onProgress?.('planning_tailor', 'Running a full Groq tailor pass for this job…')
+  await pace()
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     result.job,

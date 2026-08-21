@@ -20,10 +20,15 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 /** Stay on the smaller live model so requests fit free-tier TPM. */
 const GROQ_MODEL = 'openai/gpt-oss-20b'
 
-/** Soft cap so input + completion stays under ~8k TPM on free tier. */
-const DEFAULT_MAX_TOKENS = 2800
-const MAX_USER_CHARS = 10000
-const MAX_SYSTEM_CHARS = 3500
+/**
+ * Free tier for gpt-oss-20b is ~8k TPM org-wide (all keys share it).
+ * Groq counts input tokens + max_tokens against that cap per request.
+ */
+const DEFAULT_MAX_TOKENS = 1200
+const MAX_USER_CHARS = 5500
+const MAX_SYSTEM_CHARS = 1800
+const MAX_ATTEMPTS = 8
+
 
 export class GroqUserError extends Error {
   constructor(message: string) {
@@ -58,10 +63,11 @@ function sleep(ms: number) {
 
 function parseRetryMs(errText: string): number {
   const m = errText.match(/try again in\s+([\d.]+)\s*s/i)
-  if (!m) return 0
+  if (!m) return 8000
   const sec = Number(m[1])
-  if (!Number.isFinite(sec) || sec <= 0) return 0
-  return Math.min(Math.ceil(sec * 1000) + 250, 20000)
+  if (!Number.isFinite(sec) || sec <= 0) return 8000
+  // Honor Groq's wait, with a little buffer. Cap so UI does not freeze forever.
+  return Math.min(Math.ceil(sec * 1000) + 400, 45000)
 }
 
 function isRateOrSizeLimit(status: number): boolean {
@@ -113,9 +119,10 @@ async function fetchJsonCompletion(args: {
 }
 
 /**
- * Call Groq with JSON output. Cycles every configured API key on 429/413,
- * retries once after a short wait if every key is hot, and never surfaces
- * raw provider dumps to the UI.
+ * Call Groq with JSON output. Uses Groq for real.
+ * On 429 waits for the provider retry window and tries again.
+ * On 413 shrinks the prompt and retries.
+ * Extra keys help only if they belong to different Groq orgs.
  */
 export async function callOpenAIJson<T>(args: {
   system: string
@@ -131,92 +138,91 @@ export async function callOpenAIJson<T>(args: {
   }
 
   const schema = stripNullTypes(args.schema) as Record<string, unknown>
-  const system = `${args.system}\n\n${HONESTY_RULES}`.slice(0, MAX_SYSTEM_CHARS)
-  const user = args.user.slice(0, MAX_USER_CHARS)
-  const maxTokens = Math.min(args.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
+  let system = `${args.system}\n\n${HONESTY_RULES}`.slice(0, MAX_SYSTEM_CHARS)
+  let user = args.user.slice(0, MAX_USER_CHARS)
+  let maxTokens = Math.min(args.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
   const temperature = args.temperature ?? 0.2
 
-  const formats: Array<{ label: string; responseFormat: Record<string, unknown>; messages: Array<{ role: string; content: string }> }> =
-    [
-      {
-        label: 'schema',
-        responseFormat: {
+  let sawRateLimit = false
+  let lastErr: unknown
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const useObjectFormat = attempt >= 2
+    const responseFormat: Record<string, unknown> = useObjectFormat
+      ? { type: 'json_object' }
+      : {
           type: 'json_schema',
           json_schema: {
             name: args.schemaName,
             strict: true,
             schema,
           },
-        },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      },
-      {
-        label: 'object',
-        responseFormat: { type: 'json_object' },
-        messages: [
+        }
+
+    const messages = useObjectFormat
+      ? [
           {
             role: 'system',
             content: `${system}\n\nReturn a single JSON object for "${args.schemaName}".`,
           },
           { role: 'user', content: user },
-        ],
-      },
-    ]
+        ]
+      : [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ]
 
-  let sawRateLimit = false
-  let lastRetryMs = 0
-
-  for (const format of formats) {
     const orderedKeys = keysStartingAtRotation()
-    for (let pass = 0; pass < 2; pass += 1) {
-      if (pass === 1) {
-        const wait = Math.max(lastRetryMs, 2000)
-        await sleep(wait)
-      }
-
-      for (const apiKey of orderedKeys) {
+    for (const apiKey of orderedKeys) {
+      try {
+        const content = await fetchJsonCompletion({
+          apiKey,
+          model: GROQ_MODEL,
+          messages,
+          temperature,
+          maxTokens,
+          responseFormat,
+        })
+        advanceKeyRotation()
         try {
-          const content = await fetchJsonCompletion({
-            apiKey,
-            model: GROQ_MODEL,
-            messages: format.messages,
-            temperature,
-            maxTokens,
-            responseFormat: format.responseFormat,
-          })
-          advanceKeyRotation()
-          try {
-            return JSON.parse(content) as T
-          } catch {
-            // bad JSON → try next format / key
-            console.error('[Fitline] Groq returned invalid JSON')
-          }
-        } catch (err) {
-          const status = (err as { status?: number }).status
-          const retryMs = (err as { retryMs?: number }).retryMs || 0
-          if (status && isRateOrSizeLimit(status)) {
-            sawRateLimit = true
-            lastRetryMs = Math.max(lastRetryMs, retryMs)
-            advanceKeyRotation()
-            console.warn('[Fitline] Groq rate/size limit, rotating key')
-            continue
-          }
-          if (status && status >= 500) {
-            advanceKeyRotation()
-            console.warn('[Fitline] Groq server error, rotating key')
-            continue
-          }
-          // Auth / other → try next key, then next format
-          console.error('[Fitline] Groq request failed', status || err)
-          advanceKeyRotation()
+          return JSON.parse(content) as T
+        } catch {
+          console.error('[Fitline] Groq returned invalid JSON, retrying')
+          lastErr = new Error('INVALID_JSON')
         }
+      } catch (err) {
+        lastErr = err
+        const status = (err as { status?: number }).status
+        const retryMs = (err as { retryMs?: number }).retryMs || 8000
+        advanceKeyRotation()
+
+        if (status && isRateOrSizeLimit(status)) {
+          sawRateLimit = true
+          if (status === 413) {
+            // Request itself is too large for the org TPM window — shrink hard.
+            user = user.slice(0, Math.floor(user.length * 0.65))
+            system = system.slice(0, Math.floor(system.length * 0.85))
+            maxTokens = Math.max(600, Math.floor(maxTokens * 0.7))
+            console.warn('[Fitline] Groq request too large, shrinking and retrying')
+          } else {
+            console.warn(`[Fitline] Groq rate limited, waiting ${Math.ceil(retryMs / 1000)}s`)
+            await sleep(retryMs)
+          }
+          break // next attempt with wait/shrink applied
+        }
+
+        if (status && status >= 500) {
+          await sleep(1500)
+          break
+        }
+
+        // Auth / other: try next key in this attempt
+        console.error('[Fitline] Groq request failed', status || err)
       }
     }
   }
 
+  console.error('[Fitline] Groq exhausted retries', lastErr)
   if (sawRateLimit) {
     throw new GroqUserError('The AI is busy right now. Please try again in a minute.')
   }
