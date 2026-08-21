@@ -1,5 +1,13 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { StoredResume } from '@/types'
+import {
+  getApiKey,
+  getApiKeys,
+  hasConfiguredApiKey,
+  setApiKey,
+} from '@/lib/ai/groqKeys'
+
+export { getApiKey, getApiKeys, hasConfiguredApiKey, setApiKey }
 
 interface FitlineDB extends DBSchema {
   resume: {
@@ -56,29 +64,4 @@ export async function getResume(): Promise<StoredResume | null> {
 export async function removeResume(): Promise<void> {
   const db = await getDb()
   await db.delete('resume', RESUME_KEY)
-}
-
-const API_KEY_STORAGE = 'fitline_groq_key'
-const LEGACY_KEY_STORAGE = 'fitline_openai_key'
-
-export function getApiKey(): string {
-  return (
-    localStorage.getItem(API_KEY_STORAGE) ||
-    localStorage.getItem(LEGACY_KEY_STORAGE) ||
-    import.meta.env.VITE_GROQ_API_KEY ||
-    import.meta.env.VITE_OPENAI_API_KEY ||
-    ''
-  )
-}
-
-export function setApiKey(key: string): void {
-  if (key.trim()) {
-    localStorage.setItem(API_KEY_STORAGE, key.trim())
-  } else {
-    localStorage.removeItem(API_KEY_STORAGE)
-  }
-}
-
-export function hasConfiguredApiKey(): boolean {
-  return Boolean(getApiKey())
 }

@@ -8,7 +8,7 @@ import type {
 } from '@/types'
 import { callOpenAIJson, tailoringSchema } from '@/lib/ai/client'
 import { localTailor } from '@/lib/ai/localEngine'
-import { getApiKey } from '@/lib/storage'
+import { getApiKeys } from '@/lib/storage'
 import {
   applyChangesToOriginalText,
   canApplyChange,
@@ -81,11 +81,9 @@ export async function planAndGenerate(
   mode: 'standard' | 'deep' = 'standard',
 ): Promise<{ plan: TailoringPlan; tailored: TailoredResume }> {
   const deep = mode === 'deep'
-  if (!getApiKey()) {
+  if (!getApiKeys().length) {
     if (deep) {
-      throw new Error(
-        'Groq API key is missing. Rebuild needs a real AI pass, not the offline fallback.',
-      )
+      throw new Error('AI is not configured yet. Please try again later.')
     }
     const local = localTailor(resume.rawText, job, matches)
     return {
@@ -122,7 +120,7 @@ export async function planAndGenerate(
         schemaName: 'tailoring_plan',
         schema: tailoringSchema,
         temperature: 0,
-        maxTokens: 10000,
+        maxTokens: 2800,
         system: [
           'Create a Tailoring Plan for ONE job. Do NOT rewrite for the sake of rewriting.',
           'If a bullet already clearly communicates the job needs, put it in noChangeNeeded and leave it out of changes.',
@@ -136,7 +134,7 @@ export async function planAndGenerate(
           'action=rewrite or trim. notAdding = missing must-haves you refuse to invent. toRemove = off-target themes to de-emphasize.',
         ].join(' '),
         user: JSON.stringify({
-          originalResumeText: resume.rawText.slice(0, 18000),
+          originalResumeText: resume.rawText.slice(0, 9000),
           resumeModel: {
             name: resume.name,
             contact: resume.contact,
@@ -149,21 +147,21 @@ export async function planAndGenerate(
           },
           jobTitle: job.title,
           company: job.company,
-          jobDescriptionText: job.rawText.slice(0, deep || strict ? 9000 : 4000),
-          responsibilities: job.responsibilities,
-          strongMatches: strong.map((m) => ({ need: m.requirement.text, evidence: m.evidence })),
-          partialMatches: partial.map((m) => ({
+          jobDescriptionText: job.rawText.slice(0, deep || strict ? 4500 : 2500),
+          responsibilities: (job.responsibilities || []).slice(0, 12),
+          strongMatches: strong.slice(0, 10).map((m) => ({ need: m.requirement.text, evidence: m.evidence })),
+          partialMatches: partial.slice(0, 10).map((m) => ({
             need: m.requirement.text,
             evidence: m.evidence,
             tip: m.reasoning,
           })),
-          missingMatches: missing.map((m) => ({
+          missingMatches: missing.slice(0, 10).map((m) => ({
             need: m.requirement.text,
             priority: m.requirement.priority,
           })),
           mode,
           strict,
-        }).slice(0, 28000),
+        }).slice(0, 14000),
       })
 
     let data = await runTailorCall(false)
@@ -209,11 +207,8 @@ export async function planAndGenerate(
   } catch (err) {
     console.error('[Fitline] tailor AI failed', err)
     if (deep) {
-      throw new Error(
-        err instanceof Error
-          ? `Could not tailor the resume: ${err.message}`
-          : 'Could not tailor the resume. Check your Groq API key and try again.',
-      )
+      if (err instanceof Error && err.name === 'GroqUserError') throw err
+      throw new Error('Could not tailor the resume. Please try again.')
     }
     const local = localTailor(resume.rawText, job, matches)
     return {

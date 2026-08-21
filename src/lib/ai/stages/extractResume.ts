@@ -1,7 +1,7 @@
 import type { ResumeProfile } from '@/types'
 import { callOpenAIJson, resumeProfileSchema } from '@/lib/ai/client'
 import { localExtractResume } from '@/lib/ai/localEngine'
-import { getApiKey } from '@/lib/storage'
+import { getApiKeys } from '@/lib/storage'
 
 function nullToUndef<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
@@ -9,7 +9,7 @@ function nullToUndef<T>(v: T | null | undefined): T | undefined {
 
 /** Full resume → Canonical Resume Model (Groq + local fallback). */
 export async function extractResumeProfile(rawText: string): Promise<ResumeProfile> {
-  if (!getApiKey()) return localExtractResume(rawText)
+  if (!getApiKeys().length) return localExtractResume(rawText)
 
   try {
     const data = await callOpenAIJson<{
@@ -51,7 +51,7 @@ export async function extractResumeProfile(rawText: string): Promise<ResumeProfi
       schemaName: 'resume_profile',
       schema: resumeProfileSchema,
       temperature: 0,
-      maxTokens: 10000,
+      maxTokens: 2800,
       system: [
         'Build a thorough Canonical Resume Model from the FULL resume text.',
         'Extract contact, summary, every role with every bullet, projects, education, skills, tools, certifications, and other sections.',
@@ -60,7 +60,7 @@ export async function extractResumeProfile(rawText: string): Promise<ResumeProfi
         'Ids like exp-1, proj-1, edu-1. extractionNotes for unclear parsing only.',
         'Thorough enough for good decisions, not a bloated schema dump.',
       ].join(' '),
-      user: `Resume text (understand everything present):\n\n${rawText.slice(0, 24000)}`,
+      user: `Resume text (understand everything present):\n\n${rawText.slice(0, 10000)}`,
     })
 
     return {
@@ -100,7 +100,8 @@ export async function extractResumeProfile(rawText: string): Promise<ResumeProfi
       otherSections: data.otherSections || [],
       extractionNotes: data.extractionNotes || [],
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'GroqUserError') throw err
     return localExtractResume(rawText)
   }
 }

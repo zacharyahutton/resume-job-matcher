@@ -1,7 +1,7 @@
 import type { FitAssessment, JobExtraction, RequirementMatch, ResumeProfile } from '@/types'
 import { callOpenAIJson, fitSchema } from '@/lib/ai/client'
 import { localAssessFit } from '@/lib/ai/localEngine'
-import { getApiKey } from '@/lib/storage'
+import { getApiKeys } from '@/lib/storage'
 
 function withCounts(
   fit: Omit<
@@ -39,7 +39,7 @@ export async function assessFit(
   matches: RequirementMatch[],
   resume: ResumeProfile,
 ): Promise<FitAssessment> {
-  if (!getApiKey()) return localAssessFit(matches)
+  if (!getApiKeys().length) return localAssessFit(matches)
 
   try {
     const data = await callOpenAIJson<{
@@ -54,7 +54,7 @@ export async function assessFit(
       schemaName: 'fit_assessment',
       schema: fitSchema,
       temperature: 0.1,
-      maxTokens: 5000,
+      maxTokens: 2500,
       system: [
         'Write an honest interview-fit assessment after reviewing every match.',
         'wouldBeFit: 3 to 6 concrete reasons they WOULD be a fit / get an interview, grounded in strong matches.',
@@ -75,11 +75,12 @@ export async function assessFit(
           evidence: m.evidence,
           reasoning: m.reasoning,
         })),
-      }).slice(0, 16000),
+      }).slice(0, 10000),
     })
 
     return withCounts(data, matches)
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'GroqUserError') throw err
     return localAssessFit(matches)
   }
 }

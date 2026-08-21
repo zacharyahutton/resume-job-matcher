@@ -14,7 +14,7 @@ import { buildOptimizeFullText } from '@/lib/ai/render/optimize'
 import { materializeDownloads } from '@/lib/generateDocs'
 import { extractTextFromBlob, looksBadlyExtracted } from '@/lib/parseResume'
 import { normalizeResumeExportText } from '@/lib/preserveFormat'
-import { getApiKey } from '@/lib/storage'
+import { getApiKeys } from '@/lib/storage'
 
 export type ProgressFn = (stage: AnalysisStage, detail?: string) => void
 export type { ResumeSourceMeta }
@@ -26,10 +26,8 @@ function isDocxSource(fileName?: string, mimeType?: string) {
 }
 
 function requireGroqForDeepWork() {
-  if (!getApiKey()) {
-    throw new Error(
-      'Groq API key is missing, so Fitline cannot run a real tailor pass. Set VITE_GROQ_API_KEY (or add a key in settings) and try again.',
-    )
+  if (!getApiKeys().length) {
+    throw new Error('AI is not configured yet. Please try again later.')
   }
 }
 

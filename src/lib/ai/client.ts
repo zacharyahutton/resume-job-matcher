@@ -1,5 +1,9 @@
 ﻿import { z } from 'zod'
-import { getApiKey } from '@/lib/storage'
+import {
+  advanceKeyRotation,
+  getApiKeys,
+  keysStartingAtRotation,
+} from '@/lib/ai/groqKeys'
 
 const HONESTY_RULES = `
 CRITICAL RULES. NEVER violate these:
@@ -8,14 +12,25 @@ CRITICAL RULES. NEVER violate these:
 - If something is not supported by the resume, mark it missing or unclear.
 - Prefer honesty over optimism. A realistic "Stretch" or "Weak Fit" is better than a false "Strong Fit".
 - Tailoring may rephrase and re-emphasize real content only. Never fabricate.
-- User-facing text (summary, whyFit, gaps, evidence, reasoning, why) must be plain and direct. Tell the candidate what to keep, rewrite, or leave out. No jargon.
+- User-facing text (summary, whyFit, gaps, evidence, reasoning, why) must be plain and direct.
 - Respond with valid JSON only that matches the required schema.
 `.trim()
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-/** Live Groq models only. Do not use retired Meta IDs. */
+/** Stay on the smaller live model so requests fit free-tier TPM. */
 const GROQ_MODEL = 'openai/gpt-oss-20b'
-const GROQ_FALLBACK_MODEL = 'openai/gpt-oss-120b'
+
+/** Soft cap so input + completion stays under ~8k TPM on free tier. */
+const DEFAULT_MAX_TOKENS = 2800
+const MAX_USER_CHARS = 10000
+const MAX_SYSTEM_CHARS = 3500
+
+export class GroqUserError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GroqUserError'
+  }
+}
 
 function stripNullTypes(schema: unknown): unknown {
   if (Array.isArray(schema)) {
@@ -26,7 +41,6 @@ function stripNullTypes(schema: unknown): unknown {
     const next: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(obj)) {
       if (key === 'type' && Array.isArray(value)) {
-        // Groq is happier with a single type; prefer string over null
         const nonNull = value.filter((t) => t !== 'null')
         next[key] = nonNull.length === 1 ? nonNull[0] : nonNull
       } else {
@@ -38,6 +52,71 @@ function stripNullTypes(schema: unknown): unknown {
   return schema
 }
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+function parseRetryMs(errText: string): number {
+  const m = errText.match(/try again in\s+([\d.]+)\s*s/i)
+  if (!m) return 0
+  const sec = Number(m[1])
+  if (!Number.isFinite(sec) || sec <= 0) return 0
+  return Math.min(Math.ceil(sec * 1000) + 250, 20000)
+}
+
+function isRateOrSizeLimit(status: number): boolean {
+  return status === 429 || status === 413
+}
+
+async function fetchJsonCompletion(args: {
+  apiKey: string
+  model: string
+  messages: Array<{ role: string; content: string }>
+  temperature: number
+  maxTokens: number
+  responseFormat: Record<string, unknown>
+}): Promise<string> {
+  const response = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: args.model,
+      temperature: args.temperature,
+      max_tokens: args.maxTokens,
+      response_format: args.responseFormat,
+      messages: args.messages,
+    }),
+  })
+
+  if (!response.ok) {
+    const errText = await response.text()
+    const err = new Error(`HTTP_${response.status}`) as Error & {
+      status: number
+      body: string
+      retryMs: number
+    }
+    err.status = response.status
+    err.body = errText
+    err.retryMs = parseRetryMs(errText)
+    throw err
+  }
+
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content
+  if (!content || typeof content !== 'string') {
+    throw new Error('EMPTY')
+  }
+  return content
+}
+
+/**
+ * Call Groq with JSON output. Cycles every configured API key on 429/413,
+ * retries once after a short wait if every key is hot, and never surfaces
+ * raw provider dumps to the UI.
+ */
 export async function callOpenAIJson<T>(args: {
   system: string
   user: string
@@ -46,75 +125,107 @@ export async function callOpenAIJson<T>(args: {
   temperature?: number
   maxTokens?: number
 }): Promise<T> {
-  const apiKey = getApiKey()
-  if (!apiKey) {
-    throw new Error('NO_API_KEY')
+  const keys = getApiKeys()
+  if (!keys.length) {
+    throw new GroqUserError('AI is not configured yet. Please try again later.')
   }
 
   const schema = stripNullTypes(args.schema) as Record<string, unknown>
-  const messages = [
-    { role: 'system', content: `${args.system}\n\n${HONESTY_RULES}` },
-    { role: 'user', content: args.user },
-  ]
-  const max_tokens = args.maxTokens ?? 6000
+  const system = `${args.system}\n\n${HONESTY_RULES}`.slice(0, MAX_SYSTEM_CHARS)
+  const user = args.user.slice(0, MAX_USER_CHARS)
+  const maxTokens = Math.min(args.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
   const temperature = args.temperature ?? 0.2
 
-  const attempt = async (model: string, body: Record<string, unknown>) => {
-    const response = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ ...body, model, temperature, max_tokens }),
-    })
-
-    if (!response.ok) {
-      const errText = await response.text()
-      throw new Error(`Groq ${model} failed (${response.status}): ${errText.slice(0, 280)}`)
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-    if (!content) throw new Error(`Empty Groq response from ${model}.`)
-    try {
-      return JSON.parse(content) as T
-    } catch {
-      throw new Error(`Groq ${model} returned invalid JSON.`)
-    }
-  }
-
-  try {
-    return await attempt(GROQ_MODEL, {
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: args.schemaName,
-          strict: true,
-          schema,
+  const formats: Array<{ label: string; responseFormat: Record<string, unknown>; messages: Array<{ role: string; content: string }> }> =
+    [
+      {
+        label: 'schema',
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: {
+            name: args.schemaName,
+            strict: true,
+            schema,
+          },
         },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
       },
-      messages,
-    })
-  } catch (primaryErr) {
-    try {
-      return await attempt(GROQ_FALLBACK_MODEL, {
-        response_format: { type: 'json_object' },
+      {
+        label: 'object',
+        responseFormat: { type: 'json_object' },
         messages: [
           {
             role: 'system',
-            content: `${args.system}\n\n${HONESTY_RULES}\n\nReturn a single JSON object matching this schema name "${args.schemaName}":\n${JSON.stringify(schema)}`,
+            content: `${system}\n\nReturn a single JSON object for "${args.schemaName}".`,
           },
-          { role: 'user', content: args.user },
+          { role: 'user', content: user },
         ],
-      })
-    } catch (fallbackErr) {
-      const a = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
-      const b = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-      throw new Error(`${a} | fallback: ${b}`)
+      },
+    ]
+
+  let sawRateLimit = false
+  let lastRetryMs = 0
+
+  for (const format of formats) {
+    const orderedKeys = keysStartingAtRotation()
+    for (let pass = 0; pass < 2; pass += 1) {
+      if (pass === 1) {
+        const wait = Math.max(lastRetryMs, 2000)
+        await sleep(wait)
+      }
+
+      for (const apiKey of orderedKeys) {
+        try {
+          const content = await fetchJsonCompletion({
+            apiKey,
+            model: GROQ_MODEL,
+            messages: format.messages,
+            temperature,
+            maxTokens,
+            responseFormat: format.responseFormat,
+          })
+          advanceKeyRotation()
+          try {
+            return JSON.parse(content) as T
+          } catch {
+            // bad JSON → try next format / key
+            console.error('[Fitline] Groq returned invalid JSON')
+          }
+        } catch (err) {
+          const status = (err as { status?: number }).status
+          const retryMs = (err as { retryMs?: number }).retryMs || 0
+          if (status && isRateOrSizeLimit(status)) {
+            sawRateLimit = true
+            lastRetryMs = Math.max(lastRetryMs, retryMs)
+            advanceKeyRotation()
+            console.warn('[Fitline] Groq rate/size limit, rotating key')
+            continue
+          }
+          if (status && status >= 500) {
+            advanceKeyRotation()
+            console.warn('[Fitline] Groq server error, rotating key')
+            continue
+          }
+          // Auth / other → try next key, then next format
+          console.error('[Fitline] Groq request failed', status || err)
+          advanceKeyRotation()
+        }
+      }
     }
   }
+
+  if (sawRateLimit) {
+    throw new GroqUserError('The AI is busy right now. Please try again in a minute.')
+  }
+  throw new GroqUserError('Could not finish AI analysis. Please try again.')
 }
+
+// Re-export key helpers so older imports of getApiKey from storage still work via storage.ts
+export { getApiKeys }
+
 
 export const resumeProfileSchema = {
   type: 'object',

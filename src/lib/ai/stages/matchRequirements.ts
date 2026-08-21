@@ -1,14 +1,14 @@
 import type { JobExtraction, RequirementMatch, ResumeProfile } from '@/types'
 import { callOpenAIJson, matchingSchema } from '@/lib/ai/client'
 import { localMatch } from '@/lib/ai/localEngine'
-import { getApiKey } from '@/lib/storage'
+import { getApiKeys } from '@/lib/storage'
 
 /** Compare Job Model to Resume Model with evidence. */
 export async function matchRequirements(
   job: JobExtraction,
   resume: ResumeProfile,
 ): Promise<RequirementMatch[]> {
-  if (!getApiKey()) return localMatch(job, resume.rawText)
+  if (!getApiKeys().length) return localMatch(job, resume.rawText)
 
   try {
     const data = await callOpenAIJson<{
@@ -22,7 +22,7 @@ export async function matchRequirements(
       schemaName: 'requirement_matching',
       schema: matchingSchema,
       temperature: 0,
-      maxTokens: 8000,
+      maxTokens: 2800,
       system: [
         'Compare EACH job requirement to the resume carefully.',
         'Return one match object for every requirementId. Do not skip any.',
@@ -42,8 +42,8 @@ export async function matchRequirements(
           education: resume.education,
           certifications: resume.certifications,
         },
-        resumeText: resume.rawText.slice(0, 14000),
-      }).slice(0, 22000),
+        resumeText: resume.rawText.slice(0, 8000),
+      }).slice(0, 12000),
     })
 
     const byId = new Map(job.requirements.map((r) => [r.id, r]))
@@ -71,7 +71,8 @@ export async function matchRequirements(
       }))
 
     return [...fromAi, ...missing]
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'GroqUserError') throw err
     return localMatch(job, resume.rawText)
   }
 }
