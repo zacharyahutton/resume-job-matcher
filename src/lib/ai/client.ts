@@ -13,8 +13,10 @@ CRITICAL RULES. NEVER violate these:
 `.trim()
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-/** Strong structured-output model on Groq */
+/** Primary structured-output model on Groq */
 const GROQ_MODEL = 'openai/gpt-oss-20b'
+/** Fallback after llama-3.3-70b-versatile shutdown (2026-08-16) */
+const GROQ_FALLBACK_MODEL = 'openai/gpt-oss-120b'
 
 function stripNullTypes(schema: unknown): unknown {
   if (Array.isArray(schema)) {
@@ -93,21 +95,27 @@ export async function callOpenAIJson<T>(args: {
       },
       messages,
     })
-  } catch {
-    // Fallback: JSON object mode + schema hint (wider model compatibility)
-    return await attempt({
-      model: 'llama-3.3-70b-versatile',
-      temperature: args.temperature ?? 0.2,
-      max_tokens,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: `${args.system}\n\n${HONESTY_RULES}\n\nReturn a single JSON object matching this schema name "${args.schemaName}":\n${JSON.stringify(schema)}`,
-        },
-        { role: 'user', content: args.user },
-      ],
-    })
+  } catch (primaryErr) {
+    // Fallback: JSON object mode on a live model (llama-3.3-70b-versatile is gone)
+    try {
+      return await attempt({
+        model: GROQ_FALLBACK_MODEL,
+        temperature: args.temperature ?? 0.2,
+        max_tokens,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `${args.system}\n\n${HONESTY_RULES}\n\nReturn a single JSON object matching this schema name "${args.schemaName}":\n${JSON.stringify(schema)}`,
+          },
+          { role: 'user', content: args.user },
+        ],
+      })
+    } catch {
+      throw primaryErr instanceof Error
+        ? primaryErr
+        : new Error('Groq request failed on primary and fallback models.')
+    }
   }
 }
 
