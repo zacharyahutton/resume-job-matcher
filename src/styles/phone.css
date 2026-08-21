@@ -1,0 +1,253 @@
+/** HTML phone mockup (optional fallback; hero prefers PNG for template sizing) */
+
+.fitline-phone {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-height: none;
+  overflow: hidden;
+  filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.2));
+  margin: 0 auto;
+  background: transparent;
+}
+
+.fitline-phone-frame {
+  background: #111;
+  border-radius: 42px 42px 0 0;
+  padding: 12px 12px 0;
+  border: 3px solid #1a1a1a;
+  border-bottom: 0;
+  box-shadow: inset 0 0 0 2px #333;
+}
+
+.fitline-phone-screen {
+  background: #f4f5f8;
+  border-radius: 28px 28px 0 0;
+  overflow: hidden;
+  min-height: 520px;
+  text-align: left;
+  position: relative;
+}
+
+.fitline-phone-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(180deg, #1a2bff 0%, #0000ff 100%);
+}
+
+.fitline-phone-status-mid {
+  opacity: 0.9;
+}
+
+.fitline-phone-header {
+  background: linear-gradient(180deg, #0000ff 0%, #1a2bff 55%, #2332dd 100%);
+  color: #fff;
+  padding: 8px 18px 22px;
+}
+
+.fitline-phone-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.fitline-phone-brand img {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.fitline-phone-score-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.fitline-phone-ring {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: conic-gradient(#abfb4f 0 84%, rgba(255, 255, 255, 0.25) 0);
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.fitline-phone-ring::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: #0000ff;
+}
+
+.fitline-phone-ring strong {
+  position: relative;
+  font-family: 'Raleway', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  z-index: 1;
+}
+
+.fitline-phone-header h4 {
+  margin: 0 0 4px;
+  color: #fff;
+  font-size: 20px;
+  font-family: 'Raleway', sans-serif;
+}
+
+.fitline-phone-header p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fitline-phone-body {
+  padding: 14px 14px 18px;
+  margin-top: -10px;
+}
+
+.fitline-phone-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px 12px 10px;
+  margin-bottom: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid #eceef3;
+}
+
+.fitline-phone-card h5 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7b878c;
+}
+
+.fitline-phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #f1f2f5;
+  font-size: 12px;
+  color: #111;
+}
+
+.fitline-phone-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.fitline-phone-ico {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.fitline-phone-ico.ok {
+  background: #dcfce7;
+  color: #15803d;
+}
+.fitline-phone-ico.warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+.fitline-phone-ico.bad {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.fitline-phone-row .meta {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: #7b878c;
+}
+
+.fitline-phone-bars .bar {
+  margin-bottom: 8px;
+}
+
+.fitline-phone-bars .bar span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #414141;
+}
+
+.fitline-phone-bars .track {
+  height: 8px;
+  border-radius: 999px;
+  background: #eef0f4;
+  overflow: hidden;
+}
+
+.fitline-phone-bars .fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.fitline-phone-bars .fill.green {
+  width: 78%;
+  background: #abfb4f;
+}
+.fitline-phone-bars .fill.blue {
+  width: 54%;
+  background: #0000ff;
+}
+
+.fitline-phone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fitline-phone-chips span {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #f0f3ff;
+  color: #2332dd;
+  border: 1px solid #d8deff;
+}
+
+.fitline-phone-cta {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: #0000ff;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 12px;
+  border-radius: 12px;
+  margin-top: 4px;
+  border: 0;
+}
+
+.fitline-phone-home {
+  width: 108px;
+  height: 4px;
+  background: #c9ccd3;
+  border-radius: 999px;
+  margin: 8px auto 4px;
+}

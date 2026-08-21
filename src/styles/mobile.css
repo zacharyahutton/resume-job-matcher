@@ -1,0 +1,253 @@
+/* Crop phone like the Zubaz template (bottom cut off) */
+.zubuz-hero-section {
+  overflow: hidden !important;
+}
+
+.fitline-hero-lead__short {
+  display: none;
+}
+
+@media (max-width: 991px) {
+  /* Keep a compact CTA visible next to the menu */
+  .site-header .header-btn {
+    display: inline-flex !important;
+    margin-left: auto !important;
+    margin-right: 8px;
+  }
+
+  .site-header .header-btn .zubuz-default-btn,
+  .site-header .header-btn .zubuz-header-btn {
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+    min-height: 0;
+  }
+
+  .site-header .navbar {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .site-header .mobile-menu-trigger {
+    margin-left: 0 !important;
+    flex-shrink: 0;
+  }
+
+  .site-header .brand-logo .fitline-logo {
+    font-size: 22px;
+  }
+
+  .site-header .brand-logo .fitline-logo img {
+    width: 30px;
+    height: 30px;
+  }
+
+  /* Full-viewport hero like Zubaz mobile */
+  .zubuz-hero-section {
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding-top: 0 !important;
+    display: flex;
+    flex-direction: column;
+    background-size: 160% auto;
+    background-position: center bottom;
+  }
+
+  .zubuz-hero-section > .container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding-top: calc(72px + env(safe-area-inset-top, 0px));
+    padding-bottom: 0;
+  }
+
+  .zubuz-hero-content.center {
+    flex-shrink: 0;
+    padding-bottom: 16px !important;
+    max-width: 100%;
+  }
+
+  .zubuz-hero-content.center h1 {
+    font-size: clamp(28px, 7.2vw, 40px) !important;
+    line-height: 1.12 !important;
+    margin-bottom: 12px !important;
+  }
+
+  .zubuz-hero-content.center p.fitline-hero-lead {
+    font-size: 15px !important;
+    line-height: 1.45 !important;
+    margin-bottom: 22px !important;
+    max-width: 34ch;
+  }
+
+  .fitline-hero-lead__full {
+    display: none;
+  }
+
+  .fitline-hero-lead__short {
+    display: inline;
+  }
+
+  .zubuz-hero-btn-wrap {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    justify-content: center !important;
+    gap: 10px !important;
+    row-gap: 10px !important;
+  }
+
+  .zubuz-hero-btn-wrap .zubuz-default-btn,
+  .zubuz-hero-btn-wrap .zubuz-hero-video {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    text-align: center;
+    padding: 12px 10px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+
+  .zubuz-hero-btn-wrap .zubuz-hero-video img {
+    width: 22px;
+    height: 22px;
+    margin-right: 6px;
+  }
+
+  .zubuz-hero-shape {
+    display: none !important;
+  }
+
+  .zubuz-hero-bottom.fitline-hero-bottom {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    margin-top: 4px;
+    min-height: 0;
+    padding-top: 0;
+    position: relative;
+  }
+
+  .zubuz-footer-bottom {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 14px !important;
+    text-align: left !important;
+  }
+
+  .zubuz-footer-textarea p {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+  }
+
+  .zubuz-iconbox-wrap {
+    margin-bottom: 16px;
+  }
+
+  .zubuz-cta-section .zubuz-extara-mt .zubuz-default-btn,
+  .zubuz-cta-section .fitline-secondary-btn {
+    width: 100%;
+    max-width: 360px;
+    text-align: center;
+    display: block;
+  }
+
+  .zubuz-cta-section .col-lg-4 {
+    justify-content: flex-start !important;
+  }
+
+  .zubuz-cta-section .zubuz-default-content.light h2,
+  .zubuz-cta-section .zubuz-default-content.light p {
+    color: #fff !important;
+  }
+
+  .fl-process {
+    margin-bottom: 24px;
+  }
+
+  .fitline-page {
+    padding-top: 110px;
+    padding-bottom: 56px;
+  }
+
+  .fitline-card {
+    padding: 18px;
+  }
+
+  .fitline-resume-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .fitline-score-hero {
+    grid-template-columns: 1fr !important;
+  }
+
+  .fitline-change-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .fl-demo-modal {
+    max-height: 92vh;
+    overflow: auto;
+  }
+
+  .fl-demo-bottom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fl-demo-actions {
+    width: 100%;
+  }
+
+  .fl-demo-actions .zubuz-default-btn,
+  .fl-demo-actions .ghost {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    font-size: 16px !important;
+    line-height: 26px !important;
+  }
+
+  .container {
+    width: min(100% - 1.25rem, 1296px);
+  }
+
+  .fitline-phone {
+    width: min(230px, 68vw) !important;
+    max-height: 300px !important;
+  }
+
+  /* Hero phone must fill the fold like Zubaz (overrides general phone cap) */
+  .zubuz-hero-section .zubuz-hero-thumb,
+  .zubuz-hero-section .zubuz-hero-thumb .fitline-phone {
+    width: min(300px, 78vw) !important;
+    max-height: none !important;
+  }
+
+  .fitline-mobile-extras .fitline-float.person,
+  .fitline-mobile-extras .fitline-float.resume,
+  .fitline-mobile-extras .fitline-float.bars {
+    display: none !important;
+  }
+
+}
+
+@media (min-width: 768px) {
+  .fitline-mobile-extras {
+    display: none !important;
+  }
+}

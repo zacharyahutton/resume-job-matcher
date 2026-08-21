@@ -1,0 +1,482 @@
+/* Quick, polished motion. Keep durations short. */
+
+@keyframes fl-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fl-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fl-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fl-pulse-soft {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.85;
+  }
+}
+
+@keyframes fl-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fl-progress {
+  from {
+    width: 0%;
+  }
+}
+
+@keyframes fl-bounce-dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-7px);
+    opacity: 1;
+  }
+}
+
+@keyframes fl-spin-fast {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fl-check-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes fl-count-ring {
+  from {
+    stroke-dashoffset: 283;
+  }
+}
+
+.fl-enter {
+  animation: fl-fade-up 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fl-enter-delay-1 {
+  animation-delay: 0.06s;
+}
+.fl-enter-delay-2 {
+  animation-delay: 0.12s;
+}
+.fl-enter-delay-3 {
+  animation-delay: 0.18s;
+}
+.fl-enter-delay-4 {
+  animation-delay: 0.24s;
+}
+
+.fl-stagger > * {
+  animation: fl-fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.fl-stagger > *:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.fl-stagger > *:nth-child(2) {
+  animation-delay: 0.09s;
+}
+.fl-stagger > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+.fl-stagger > *:nth-child(4) {
+  animation-delay: 0.19s;
+}
+.fl-stagger > *:nth-child(5) {
+  animation-delay: 0.24s;
+}
+.fl-stagger > *:nth-child(6) {
+  animation-delay: 0.29s;
+}
+.fl-stagger > *:nth-child(7) {
+  animation-delay: 0.34s;
+}
+.fl-stagger > *:nth-child(8) {
+  animation-delay: 0.39s;
+}
+
+/* Simple process stepper */
+.fl-process {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0 auto 36px;
+  max-width: 640px;
+  flex-wrap: wrap;
+}
+
+.fl-process-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #9aa0a6;
+}
+
+.fl-process-step .num {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid #e7e9ed;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  transition: all 0.25s ease;
+  font-size: 13px;
+}
+
+.fl-process-step.is-active {
+  color: #000;
+}
+
+.fl-process-step.is-active .num {
+  border-color: var(--blue-bg);
+  background: var(--blue-bg);
+  color: #fff;
+  animation: fl-pulse-soft 1.2s ease-in-out infinite;
+}
+
+.fl-process-step.is-done {
+  color: #000;
+}
+
+.fl-process-step.is-done .num {
+  border-color: #abfb4f;
+  background: #abfb4f;
+  color: #000;
+  animation: fl-check-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fl-process-line {
+  width: 36px;
+  height: 2px;
+  background: #e7e9ed;
+  margin: 0 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.fl-process-line.is-done {
+  background: #abfb4f;
+}
+
+.fl-process-line.is-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--blue-bg), transparent);
+  animation: fl-shimmer 1s linear infinite;
+  background-size: 200% 100%;
+}
+
+@media (max-width: 560px) {
+  .fl-process-step .label {
+    display: none;
+  }
+  .fl-process-line {
+    width: 22px;
+    margin: 0 6px;
+  }
+}
+
+/* Full-screen-ish analysis loader */
+.fl-loader-panel {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  padding: 48px 28px;
+  border: 3px solid #000;
+  box-shadow: 8px 8px 0 #000;
+  border-radius: 16px;
+  background: #fff;
+  animation: fl-scale-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fl-loader-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--blue-bg), #abfb4f, var(--blue-bg));
+  background-size: 200% 100%;
+  animation: fl-shimmer 1.1s linear infinite;
+}
+
+.fl-orbit {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 20px;
+  position: relative;
+}
+
+.fl-orbit-ring {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid #e7e9ed;
+  border-top-color: var(--blue-bg);
+  border-right-color: #abfb4f;
+  animation: fl-spin-fast 0.7s linear infinite;
+}
+
+.fl-orbit-core {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  background: #0000ff;
+  animation: fl-pulse-soft 0.9s ease-in-out infinite;
+}
+
+.fl-dots {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fl-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--blue-bg);
+  animation: fl-bounce-dot 0.9s ease-in-out infinite;
+}
+
+.fl-dots span:nth-child(2) {
+  animation-delay: 0.12s;
+  background: #2332dd;
+}
+.fl-dots span:nth-child(3) {
+  animation-delay: 0.24s;
+  background: #abfb4f;
+}
+
+.fl-stage-list {
+  max-width: 360px;
+  margin: 28px auto 0;
+  text-align: left;
+}
+
+.fl-stage-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 15px;
+  color: #9aa0a6;
+  transition: color 0.2s ease;
+}
+
+.fl-stage-item:last-child {
+  border-bottom: 0;
+}
+
+.fl-stage-item .mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #e7e9ed;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fl-stage-item.is-active {
+  color: #000;
+  font-weight: 600;
+}
+
+.fl-stage-item.is-active .mark {
+  border-color: var(--blue-bg);
+  background: rgba(0, 0, 255, 0.08);
+  color: var(--blue-bg);
+  animation: fl-pulse-soft 1s ease-in-out infinite;
+}
+
+.fl-stage-item.is-done {
+  color: #15803d;
+}
+
+.fl-stage-item.is-done .mark {
+  border-color: #abfb4f;
+  background: #abfb4f;
+  color: #000;
+  animation: fl-check-pop 0.3s ease both;
+}
+
+.fl-progress-bar {
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 22px auto 0;
+  max-width: 320px;
+}
+
+.fl-progress-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0000ff, #2332dd, #abfb4f);
+  background-size: 200% 100%;
+  animation: fl-shimmer 1s linear infinite;
+  transition: width 0.35s ease;
+}
+
+/* Skeleton */
+.fl-skel {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e8ee 37%, #f0f0f0 63%);
+  background-size: 400% 100%;
+  animation: fl-shimmer 1.1s ease infinite;
+  border-radius: 8px;
+}
+
+.fl-skel-line {
+  height: 14px;
+  margin-bottom: 10px;
+}
+
+.fl-skel-title {
+  height: 28px;
+  width: 55%;
+  margin-bottom: 16px;
+}
+
+/* Score reveal */
+.fl-score-pop {
+  animation: fl-scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fitline-card {
+  animation: fl-fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fitline-card:hover {
+  transform: translateY(-2px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.zubuz-default-btn,
+.fitline-secondary-btn,
+.fitline-danger-btn,
+.fitline-tab {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.zubuz-default-btn:hover:not(:disabled),
+.fitline-secondary-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.zubuz-default-btn:active:not(:disabled),
+.fitline-secondary-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.fitline-dropzone {
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.fitline-dropzone:hover,
+.fitline-dropzone.is-dragging {
+  transform: scale(1.01);
+}
+
+.fl-busy-overlay {
+  position: relative;
+}
+
+.fl-busy-overlay.is-busy {
+  pointer-events: none;
+  opacity: 0.45;
+  filter: grayscale(0.15);
+  transition: opacity 0.25s ease;
+}
+
+.fl-upload-flash {
+  animation: fl-check-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fl-advanced {
+  margin-top: 20px;
+}
+
+.fl-advanced summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #7b878c;
+  list-style: none;
+}
+
+.fl-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.fl-advanced[open] summary {
+  margin-bottom: 12px;
+  color: #000;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

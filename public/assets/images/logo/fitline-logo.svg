@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Fitline">
+  <rect width="64" height="64" rx="14" fill="#0000FF"/>
+  <path d="M18 16h20c4.4 0 8 3.6 8 8v24H26c-4.4 0-8-3.6-8-8V16z" fill="#fff" opacity=".2"/>
+  <rect x="20" y="18" width="24" height="30" rx="4" fill="#fff"/>
+  <path d="M26 28h12M26 34h12M26 40h8" stroke="#0000FF" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="44" cy="44" r="11" fill="#ABFB4F"/>
+  <path d="M39.5 44.2l3 3 6-6.2" stroke="#000" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

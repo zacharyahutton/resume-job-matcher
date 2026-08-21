@@ -1,0 +1,425 @@
+﻿/**
+ * Zubaz-style hero sizing + float motion.
+ * Floating cards are HTML (PNG exports had checkerboard backgrounds baked in).
+ */
+
+.fitline-hero-bottom {
+  position: relative;
+  padding-top: 24px;
+}
+
+.fitline-hero-glow {
+  position: absolute;
+  left: 50%;
+  bottom: -8%;
+  transform: translateX(-50%);
+  width: min(720px, 92vw);
+  height: min(420px, 55vw);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    #abfb4f 0%,
+    #abfb4f 42%,
+    rgba(171, 251, 79, 0.45) 62%,
+    transparent 76%
+  );
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Large phone thumb, cropped at bottom like Zubaz */
+.zubuz-hero-thumb {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
+  width: 420px;
+  max-width: 48vw;
+  margin: 0 auto;
+  max-height: 560px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.zubuz-hero-thumb .fitline-phone {
+  width: 100%;
+  max-height: none;
+  margin: 0 auto;
+  background: transparent;
+  filter: drop-shadow(0 22px 36px rgba(0, 0, 0, 0.22));
+}
+
+.zubuz-hero-card {
+  z-index: 3;
+  background: transparent !important;
+}
+
+.zubuz-hero-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.zubuz-hero-card.card2 {
+  width: auto;
+  max-width: 280px;
+}
+
+.zubuz-hero-card.card3 {
+  width: 200px;
+}
+
+.zubuz-hero-card.card4 {
+  width: auto;
+  max-width: 280px;
+}
+
+.zubuz-hero-card.card1 {
+  z-index: 4;
+}
+
+.fitline-card-float {
+  animation: float-top-bottom 6s ease-in-out infinite;
+  will-change: transform;
+  background: transparent;
+}
+
+.fitline-card-float.delay-a {
+  animation-duration: 6.2s;
+  animation-delay: 0.35s;
+}
+
+.fitline-card-float.delay-b {
+  animation-name: float-left-right;
+  animation-duration: 6.5s;
+  animation-delay: 0.2s;
+}
+
+.fitline-card-float.delay-c {
+  animation-duration: 5.8s;
+  animation-delay: 0.55s;
+}
+
+/* Neo-brutalist HTML cards (no PNG checkerboard) */
+.fitline-float-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 3px solid #000;
+  box-shadow: 6px 6px 0 #000;
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: left;
+  font-family: Inter, sans-serif;
+}
+
+.fitline-float-resume {
+  min-width: 220px;
+}
+
+.fitline-float-bars {
+  display: block;
+  min-width: 240px;
+  padding: 16px 18px;
+}
+
+.fitline-float-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #0000ff;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 800;
+  flex-shrink: 0;
+  border: 2px solid #000;
+}
+
+.fitline-float-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7b878c;
+  margin-bottom: 2px;
+}
+
+.fitline-float-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #000;
+  line-height: 1.2;
+}
+
+.fitline-float-bars .fitline-float-title {
+  margin-bottom: 12px;
+}
+
+.fitline-float-bar {
+  margin-bottom: 10px;
+}
+
+.fitline-float-bar:last-child {
+  margin-bottom: 0;
+}
+
+.fitline-float-bar span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 5px;
+  color: #111;
+}
+
+.fitline-float-bar .track {
+  height: 10px;
+  border: 2px solid #000;
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.fitline-float-bar .track i {
+  display: block;
+  height: 100%;
+}
+
+.fitline-float-bar .track i.green {
+  width: 70%;
+  background: #abfb4f;
+}
+
+.fitline-float-bar .track i.gray {
+  width: 32%;
+  background: #cfd3dc;
+}
+
+.fitline-float-photo {
+  position: relative;
+  background: #fff;
+  border: 3px solid #000;
+  box-shadow: 6px 6px 0 #000;
+  border-radius: 14px;
+  overflow: visible;
+  line-height: 0;
+}
+
+.fitline-float-photo-inner {
+  overflow: hidden;
+  border-radius: 11px;
+}
+
+.fitline-float-photo img {
+  width: 100%;
+  height: auto;
+  display: block;
+  transform: scale(1.08);
+  transform-origin: center;
+}
+
+.fitline-spark {
+  position: absolute;
+  top: -14px;
+  right: -16px;
+  width: 48px;
+  height: 48px;
+  z-index: 5;
+  pointer-events: none;
+  animation: fitline-spark-pulse 2.4s ease-in-out infinite;
+}
+
+.fitline-spark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+@keyframes fitline-spark-pulse {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08) rotate(4deg);
+    opacity: 0.85;
+  }
+}
+
+.fitline-hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-radius: 999px;
+  background: #abfb4f;
+  border: 3px solid #000;
+  box-shadow: 6px 6px 0 #000;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.2;
+  color: #000;
+  white-space: nowrap;
+  font-family: Inter, sans-serif;
+}
+
+.fitline-hero-pill-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #000;
+  color: #abfb4f;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.zubuz-hero-section .wow {
+  animation-duration: 0.9s;
+  animation-fill-mode: both;
+}
+
+.zubuz-hero-content.center h1.wow,
+.zubuz-hero-content.center p.wow,
+.zubuz-hero-btn-wrap.wow {
+  animation-duration: 0.85s;
+  animation-fill-mode: both;
+}
+
+.zubuz-hero-video {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0;
+  background: #fff;
+  cursor: pointer;
+  font-family: Inter, sans-serif;
+  transition: color 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+}
+
+.zubuz-hero-video:hover {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.zubuz-hero-video img,
+.zubuz-hero-video svg {
+  width: 28px;
+  height: 28px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1299px) {
+  .zubuz-hero-thumb {
+    width: 380px;
+    max-height: 520px;
+  }
+
+  .zubuz-hero-card.card3 {
+    width: 170px;
+  }
+}
+
+@media (max-width: 991px) {
+  .zubuz-hero-thumb {
+    width: min(320px, 68vw);
+    max-width: none;
+    max-height: none;
+    margin-bottom: -18%;
+  }
+
+  .fitline-hero-glow {
+    width: min(640px, 140vw);
+    height: min(360px, 58vh);
+    bottom: -6%;
+  }
+
+  .fitline-hero-pill {
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+
+  .fitline-float-resume,
+  .fitline-float-bars {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .zubuz-hero-card {
+    display: none !important;
+  }
+
+  .zubuz-hero-thumb {
+    width: min(300px, 78vw);
+    max-height: none;
+    margin-bottom: -22%;
+  }
+
+  .zubuz-hero-thumb .fitline-phone {
+    max-height: none;
+  }
+
+  .fitline-hero-glow {
+    width: min(560px, 150vw);
+    height: min(320px, 52vh);
+    bottom: -4%;
+  }
+
+  .zubuz-hero-btn-wrap .zubuz-hero-video {
+    font-size: 12px !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .zubuz-hero-btn-wrap {
+    flex-wrap: wrap !important;
+  }
+
+  .zubuz-hero-btn-wrap .zubuz-default-btn,
+  .zubuz-hero-btn-wrap .zubuz-hero-video {
+    flex: 1 1 100%;
+  }
+
+  .zubuz-hero-thumb {
+    width: min(260px, 82vw);
+    margin-bottom: -18%;
+  }
+}
+
+.fitline-brutal-card {
+  background: #fff;
+  border: 3px solid #000;
+  box-shadow: 8px 8px 0 #000;
+  border-radius: 16px;
+  padding: 18px;
+  text-align: left;
+}
+
+.fitline-brutal-card + .fitline-brutal-card {
+  margin-top: 16px;
+}
+
+.fitline-brutal-card .kicker {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7b878c;
+  margin-bottom: 6px;
+}
+
+.fitline-brutal-card h3 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.fitline-brutal-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+}
