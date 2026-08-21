@@ -102,7 +102,7 @@ export async function planAndGenerate(
     const strong = matches.filter((m) => m.status === 'strong')
     const missing = matches.filter((m) => m.status === 'missing' || m.status === 'unclear')
 
-    const runTailorCall = async (strict: boolean) =>
+    const runTailorCall = async () =>
       callOpenAIJson<{
         changes: Array<{
           original: string
@@ -120,51 +120,43 @@ export async function planAndGenerate(
         schemaName: 'tailoring_plan',
         schema: tailoringSchema,
         temperature: 0,
-        maxTokens: 2800,
+        maxTokens: 900,
         system: [
-          'Create a Tailoring Plan for ONE job. Do NOT rewrite for the sake of rewriting.',
-          'If a bullet already clearly communicates the job needs, put it in noChangeNeeded and leave it out of changes.',
-          'Each change.original MUST be an exact contiguous substring from originalResumeText.',
-          'Every change must be a REAL wording improvement grounded in resume evidence + job needs. Period-only edits are forbidden.',
-          'evidence must quote what on the resume supports the new wording. Never invent employers, years, skills, or metrics.',
-          deep || strict
-            ? 'When evidence supports better framing for THIS job, produce substantive rewrites (often 4 to 12). Zero changes is OK if the resume already fits.'
-            : 'Prefer 3 to 10 high-value changes when needed. Zero is OK when already clear.',
+          'Create a Tailoring Plan for ONE job. Do not rewrite for the sake of rewriting.',
+          'change.original must be an exact substring from originalResumeText.',
+          'Never invent employers, years, skills, or metrics.',
+          'Prefer 3 to 8 high-value rewrites. Zero changes is OK if already clear.',
           'Only edit summary/experience/project body lines. Never edit name, contact, URLs, headings, or dates.',
-          'action=rewrite or trim. notAdding = missing must-haves you refuse to invent. toRemove = off-target themes to de-emphasize.',
         ].join(' '),
         user: JSON.stringify({
-          originalResumeText: resume.rawText.slice(0, 9000),
-          resumeModel: {
-            name: resume.name,
-            contact: resume.contact,
-            summary: resume.summary,
-            skills: resume.skills,
-            experience: resume.experience,
-            projects: resume.projects,
-            education: resume.education,
-            tools: resume.tools,
-          },
+          originalResumeText: resume.rawText.slice(0, 4500),
+          summary: resume.summary,
+          skills: (resume.skills || []).slice(0, 20),
+          experience: (resume.experience || []).slice(0, 4).map((e) => ({
+            title: e.title,
+            company: e.company,
+            bullets: (e.bullets || []).slice(0, 4),
+          })),
+          projects: (resume.projects || []).slice(0, 3).map((p) => ({
+            name: p.name,
+            bullets: (p.bullets || []).slice(0, 3),
+          })),
           jobTitle: job.title,
           company: job.company,
-          jobDescriptionText: job.rawText.slice(0, deep || strict ? 4500 : 2500),
-          responsibilities: (job.responsibilities || []).slice(0, 12),
-          strongMatches: strong.slice(0, 10).map((m) => ({ need: m.requirement.text, evidence: m.evidence })),
-          partialMatches: partial.slice(0, 10).map((m) => ({
+          jobFocus: job.rawText.slice(0, 1800),
+          partial: partial.slice(0, 6).map((m) => ({
             need: m.requirement.text,
             evidence: m.evidence,
-            tip: m.reasoning,
           })),
-          missingMatches: missing.slice(0, 10).map((m) => ({
+          missing: missing.slice(0, 6).map((m) => ({
             need: m.requirement.text,
             priority: m.requirement.priority,
           })),
-          mode,
-          strict,
-        }).slice(0, 14000),
+          strong: strong.slice(0, 4).map((m) => m.requirement.text),
+        }).slice(0, 7000),
       })
 
-    let data = await runTailorCall(false)
+    let data = await runTailorCall()
     const mapChanges = (list: typeof data.changes) =>
       sanitizeChanges(
         list.map((c) => ({
@@ -179,12 +171,21 @@ export async function planAndGenerate(
 
     let candidate = mapChanges(data.changes)
     let applicable = filterApplicableChanges(resume.rawText, candidate)
-    const noChange = data.noChangeNeeded || []
 
-    if (applicable.length === 0 && noChange.length === 0 && (partial.length > 0 || missing.length > 0)) {
-      data = await runTailorCall(true)
-      candidate = mapChanges(data.changes)
-      applicable = filterApplicableChanges(resume.rawText, candidate)
+    // One AI call only on free tier. If empty, use local tailor instead of a second burn.
+    if (applicable.length === 0 && (partial.length > 0 || missing.length > 0)) {
+      const local = localTailor(resume.rawText, job, matches)
+      if (local.plan.changes.length > 0) {
+        return {
+          plan: local.plan,
+          tailored: buildPreservedTailored(
+            resume.rawText,
+            local.plan.changes,
+            resume.name,
+            source,
+          ),
+        }
+      }
     }
 
     const plan: TailoringPlan = {
@@ -206,10 +207,7 @@ export async function planAndGenerate(
     return { plan, tailored }
   } catch (err) {
     console.error('[Fitline] tailor AI failed', err)
-    if (deep) {
-      if (err instanceof Error && err.name === 'GroqUserError') throw err
-      throw new Error('Could not tailor the resume. Please try again.')
-    }
+    // Always finish with a usable local plan instead of stranding the user.
     const local = localTailor(resume.rawText, job, matches)
     return {
       plan: local.plan,

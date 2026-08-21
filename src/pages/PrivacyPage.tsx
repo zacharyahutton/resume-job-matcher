@@ -17,7 +17,7 @@ export function PrivacyPage() {
           </p>
           <h3>Analysis requests</h3>
           <p>
-            When you analyze a job, resume text and job text may be sent to our AI provider (Groq) to
+            When you analyze a job, resume text and job text may be sent to our AI provider to
             generate a fit assessment and tailored suggestions. Do not submit sensitive personal data
             you are not comfortable sharing with that provider.
           </p>

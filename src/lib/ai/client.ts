@@ -6,14 +6,9 @@ import {
 } from '@/lib/ai/groqKeys'
 
 const HONESTY_RULES = `
-CRITICAL RULES. NEVER violate these:
-- DO NOT invent experience, technologies, years of experience, employers, achievements, or certifications.
-- DO NOT claim a requirement is met without clear proof in the resume text.
-- If something is not supported by the resume, mark it missing or unclear.
-- Prefer honesty over optimism. A realistic "Stretch" or "Weak Fit" is better than a false "Strong Fit".
-- Tailoring may rephrase and re-emphasize real content only. Never fabricate.
-- User-facing text (summary, whyFit, gaps, evidence, reasoning, why) must be plain and direct.
-- Respond with valid JSON only that matches the required schema.
+Never invent employers, skills, years, metrics, or certifications.
+Only use evidence from the resume. Prefer honesty over optimism.
+Return valid JSON only.
 `.trim()
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
@@ -24,11 +19,11 @@ const GROQ_MODEL = 'openai/gpt-oss-20b'
  * Free tier for gpt-oss-20b is ~8k TPM org-wide (all keys share it).
  * Groq counts input tokens + max_tokens against that cap per request.
  */
-const DEFAULT_MAX_TOKENS = 1200
-const MAX_USER_CHARS = 5500
-const MAX_SYSTEM_CHARS = 1800
-const MAX_ATTEMPTS = 5
-const MAX_WAIT_MS = 16000
+const DEFAULT_MAX_TOKENS = 900
+const MAX_USER_CHARS = 4200
+const MAX_SYSTEM_CHARS = 1200
+const MAX_ATTEMPTS = 4
+const MAX_WAIT_MS = 12000
 
 
 export class GroqUserError extends Error {
@@ -159,41 +154,26 @@ export async function callOpenAIJson<T>(args: {
   let user = args.user.slice(0, MAX_USER_CHARS)
   let maxTokens = Math.min(args.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
   const temperature = args.temperature ?? 0.2
+  const schemaHint = JSON.stringify(schema).slice(0, 1200)
 
   let sawRateLimit = false
   let lastErr: unknown
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     reportStatus(
-      attempt === 0
-        ? 'Talking to Groq…'
-        : `Still working with Groq (try ${attempt + 1} of ${MAX_ATTEMPTS})…`,
+      attempt === 0 ? 'Working on your analysis…' : 'Still working. Almost there…',
     )
-    // Prefer json_object after first try — stricter json_schema burns tokens and fails more on free tier.
-    const useObjectFormat = attempt >= 1
-    const responseFormat: Record<string, unknown> = useObjectFormat
-      ? { type: 'json_object' }
-      : {
-          type: 'json_schema',
-          json_schema: {
-            name: args.schemaName,
-            strict: true,
-            schema,
-          },
-        }
+    const responseFormat: Record<string, unknown> = {
+      type: 'json_object',
+    }
 
-    const messages = useObjectFormat
-      ? [
-          {
-            role: 'system',
-            content: `${system}\n\nReturn a single JSON object for "${args.schemaName}".`,
-          },
-          { role: 'user', content: user },
-        ]
-      : [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ]
+    const messages = [
+      {
+        role: 'system',
+        content: `${system}\n\nReturn a single JSON object for "${args.schemaName}" matching keys like: ${schemaHint}`,
+      },
+      { role: 'user', content: user },
+    ]
 
     const orderedKeys = keysStartingAtRotation()
     for (const apiKey of orderedKeys) {
@@ -210,7 +190,7 @@ export async function callOpenAIJson<T>(args: {
         try {
           return JSON.parse(content) as T
         } catch {
-          console.error('[Fitline] Groq returned invalid JSON, retrying')
+          console.error('[Fitline] AI returned invalid JSON, retrying')
           lastErr = new Error('INVALID_JSON')
         }
       } catch (err) {
@@ -225,33 +205,33 @@ export async function callOpenAIJson<T>(args: {
             user = user.slice(0, Math.floor(user.length * 0.65))
             system = system.slice(0, Math.floor(system.length * 0.85))
             maxTokens = Math.max(500, Math.floor(maxTokens * 0.7))
-            reportStatus('Shrinking the request so Groq can accept it…')
-            console.warn('[Fitline] Groq request too large, shrinking and retrying')
+            reportStatus('Tightening the request size…')
+            console.warn('[Fitline] AI request too large, shrinking and retrying')
           } else {
             const secs = Math.ceil(retryMs / 1000)
-            reportStatus(`Groq is at capacity. Waiting ${secs}s, then continuing…`)
-            console.warn(`[Fitline] Groq rate limited, waiting ${secs}s`)
+            reportStatus(`Server is busy. Waiting ${secs}s, then continuing…`)
+            console.warn(`[Fitline] rate limited, waiting ${secs}s`)
             await sleep(retryMs)
           }
           break
         }
 
         if (status && status >= 500) {
-          reportStatus('Groq hiccup. Retrying…')
+          reportStatus('Temporary issue. Retrying…')
           await sleep(1200)
           break
         }
 
-        console.error('[Fitline] Groq request failed', status || err)
+        console.error('[Fitline] AI request failed', status || err)
       }
     }
   }
 
-  console.error('[Fitline] Groq exhausted retries', lastErr)
+  console.error('[Fitline] AI exhausted retries', lastErr)
   if (sawRateLimit) {
-    throw new GroqUserError('The AI is busy right now. Please try again in a minute.')
+    throw new GroqUserError('The service is busy right now. Please try again in a minute.')
   }
-  throw new GroqUserError('Could not finish AI analysis. Please try again.')
+  throw new GroqUserError('Could not finish analysis. Please try again.')
 }
 
 // Re-export key helpers so older imports of getApiKey from storage still work via storage.ts

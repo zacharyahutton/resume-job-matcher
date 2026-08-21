@@ -14,7 +14,7 @@ const REBUILD_STAGES: Array<{ id: AnalysisStage; label: string }> = [
   { id: 'extracting_resume', label: 'Refreshing clean resume text' },
   { id: 'matching', label: 'Re-checking the job vs your resume' },
   { id: 'assessing_fit', label: 'Refreshing fit and gaps' },
-  { id: 'planning_tailor', label: 'Running Groq tailor for this job' },
+  { id: 'planning_tailor', label: 'Planning changes' },
   { id: 'generating', label: 'Building PDF and DOCX' },
 ]
 
