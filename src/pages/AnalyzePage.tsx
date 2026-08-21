@@ -8,6 +8,7 @@ import { useResumeStorage } from '@/hooks/useResumeStorage'
 import { useAnalysisResult } from '@/hooks/useAnalysisResult'
 import { extractTextFromImage } from '@/lib/ocr'
 import { runAnalysisPipeline } from '@/lib/ai/pipeline'
+import { downloadPdf } from '@/lib/generateDocs'
 import type { AnalysisStage, JobInputMode } from '@/types'
 
 const STEPS = [
@@ -71,6 +72,13 @@ export function AnalyzePage() {
       setResult(result)
       setStage('done')
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      if (result.tailored?.pdfBlob || result.tailored?.fullText) {
+        try {
+          await downloadPdf(result.tailored)
+        } catch {
+          // Browser may block auto-download; results page still has the button.
+        }
+      }
       navigate('/results')
     } catch (e) {
       setStage('error')

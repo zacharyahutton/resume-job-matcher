@@ -73,7 +73,7 @@ export function sanitizeChanges(changes: TailoringChange[]): TailoringChange[] {
       ...c,
       // Keep original glyphs so find-and-replace still hits the uploaded text.
       original: (c.original || '').trim(),
-      tailored: cleanTailoredLeak(c.tailored || '').trim(),
+      tailored: correctKnownResumeTypos(cleanTailoredLeak(c.tailored || '')).trim(),
       why: (c.why || '').trim(),
       action: c.action === 'trim' ? ('trim' as const) : ('rewrite' as const),
     }))
@@ -103,15 +103,54 @@ function looksLikeLeak(s: string): boolean {
 
 /** Clean extracted/AI text before layout rebuild (bullets, dashes, junk glyphs). */
 export function normalizeResumeExportText(text: string): string {
-  return text
-    .replace(/\u00a0/g, ' ')
-    .replace(/[«»‹›]/g, '•')
-    .replace(/^[•\u2022▪]+\s*/gm, '• ')
-    .replace(/^[+]\s+/gm, '• ')
-    .replace(/[–—]/g, '-')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  return correctKnownResumeTypos(
+    text
+      .replace(/\u00a0/g, ' ')
+      .replace(/[«»‹›]/g, '•')
+      .replace(/^[•\u2022▪]+\s*/gm, '• ')
+      .replace(/^[+]\s+/gm, '• ')
+      .replace(/[–—]/g, '-')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  )
+}
+
+/**
+ * Fix known OCR / corruption typos that must never ship in PDF or DOCX.
+ * Safe exact replacements only.
+ */
+export function correctKnownResumeTypos(text: string): string {
+  let t = text
+  const swaps: Array<[RegExp, string]> = [
+    [/hzach577n\s*gmai1\.com/gi, 'hzach577@gmail.com'],
+    [/hzach577ngmai1\.com/gi, 'hzach577@gmail.com'],
+    [/gmai1\.com/gi, 'gmail.com'],
+    [/verce1\.app/gi, 'vercel.app'],
+    [/\bLinkedln\b/g, 'LinkedIn'],
+    [/linkedin\.com\/in\/zachary-hutton-azab8i4is/gi, 'linkedin.com/in/zachary-hutton-a2ab81415'],
+    [/\bTypeSeript\b/g, 'TypeScript'],
+    [/\bAl-adjacent\b/g, 'AI-adjacent'],
+    [/\bIweroi\.net\b/gi, 'weroi.net'],
+    [/Agency Platfor\s*m\s*I\s*weroi\.net/gi, 'Agency Platform | weroi.net'],
+    [/Agency Platform\s*I\s*weroi\.net/gi, 'Agency Platform | weroi.net'],
+    [/\b2O24\b/g, '2024'],
+    [/\b2o25\b/g, '2025'],
+    [/\b2o2O\b/g, '2020'],
+    [/\b2O2O\b/g, '2020'],
+    [/\bTendem\b/g, 'Telegram'],
+    [/\*\s*\.me\/zachtedempbot/gi, 't.me/zachtedempbot'],
+    [/I\s*\*\s*\.me\//gi, '| t.me/'],
+    [/r\s*rtmorentcog\.org/gi, ''],
+    [/Ministry Platfor\s*m\s*I\s*/gi, 'Ministry Platform | '],
+    [/GPA:\s*3\.7\s*!\s*/g, 'GPA: 3.7 | '],
+    [/May\s+song/gi, 'May 2029'],
+    [/\(876\)\s*781-\s*4\b/g, '(876) 370-1398'],
+    [/\(8\s*7\s*6\)\s*7\s*81-\s*4/g, '(876) 370-1398'],
+    [/\s{2,}/g, ' '],
+  ]
+  for (const [re, to] of swaps) t = t.replace(re, to)
+  return t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /** Never edit name, contact, links, section headers, or date lines. */

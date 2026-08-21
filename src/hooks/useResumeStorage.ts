@@ -6,7 +6,10 @@ import {
   loadResumeTemplate,
   TEMPLATE_FILE_NAME,
   TEMPLATE_MIME,
+  TEMPLATE_VERSION,
 } from '@/lib/resumeTemplate'
+
+const TEMPLATE_VERSION_KEY = 'fitline-template-version'
 
 export function useResumeStorage() {
   const [resume, setResume] = useState<StoredResume | null>(null)
@@ -17,22 +20,33 @@ export function useResumeStorage() {
 
   const seedTemplate = useCallback(async () => {
     const template = await loadResumeTemplate()
-    return saveResume({
+    const saved = await saveResume({
       fileName: TEMPLATE_FILE_NAME,
       mimeType: TEMPLATE_MIME,
       savedAt: Date.now(),
       text: template.text,
       blob: template.blob,
     })
+    try {
+      localStorage.setItem(TEMPLATE_VERSION_KEY, String(TEMPLATE_VERSION))
+    } catch {
+      // ignore
+    }
+    return saved
   }, [])
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
       let stored = await getResume()
-      // Seed or replace non-DOCX saves so layout always comes from the Fitline template.
       const isDocx = !!stored?.fileName?.toLowerCase().endsWith('.docx')
-      if (!stored?.blob || !isDocx) {
+      let seededVersion = 0
+      try {
+        seededVersion = Number(localStorage.getItem(TEMPLATE_VERSION_KEY) || '0')
+      } catch {
+        seededVersion = 0
+      }
+      if (!stored?.blob || !isDocx || seededVersion !== TEMPLATE_VERSION) {
         stored = await seedTemplate()
       }
       setResume(stored)
@@ -61,8 +75,6 @@ export function useResumeStorage() {
     }
     setBusy(true)
     try {
-      // Uploads are accepted for content review, but regenerated files always use
-      // the canonical layout template. Prefer DOCX uploads that replace the template seed.
       const text = await extractTextFromFile(file, (message) => setStatus(message))
       setStatus('Saving on this device…')
       const isDocx =

@@ -79,17 +79,17 @@ export function ResultsPage() {
       setResult(next)
       setStage('done')
       setReadyNote(
-        `Ready. ${next.tailoring.changes.length} edits written into your Fitline DOCX layout. Downloading now.`,
+        `Ready. ${next.tailoring.changes.length} edits applied. PDF downloading now.`,
       )
 
       try {
-        await downloadDocx(next.tailored)
         await downloadPdf(next.tailored)
+        // DOCX is available from the Download button; PDF is the automatic export.
       } catch (dlErr) {
         setError(
           dlErr instanceof Error
-            ? `Built successfully, but download failed: ${dlErr.message}`
-            : 'Built successfully, but download was blocked. Use the Download buttons.',
+            ? `Built successfully, but PDF download failed: ${dlErr.message}`
+            : 'Built successfully, but PDF download was blocked. Use Download PDF.',
         )
       }
     } catch (e) {

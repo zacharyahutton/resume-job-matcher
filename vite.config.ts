@@ -11,8 +11,14 @@ export default defineConfig({
   },
   server: {
     watch: {
-      // Windows can lock DOCX files and crash Vite's FSWatcher (EBUSY).
-      ignored: ['**/public/assets/templates/**'],
+      // Windows locks binary assets and crashes Vite's FSWatcher (EBUSY).
+      ignored: [
+        '**/public/assets/templates/**',
+        '**/public/fonts/**',
+        '**/scripts/fonts/**',
+        '**/*.docx',
+        '**/*.ttf',
+      ],
     },
   },
 })
