@@ -80,7 +80,13 @@ export async function planAndGenerate(
   source?: ResumeSourceMeta,
   mode: 'standard' | 'deep' = 'standard',
 ): Promise<{ plan: TailoringPlan; tailored: TailoredResume }> {
+  const deep = mode === 'deep'
   if (!getApiKey()) {
+    if (deep) {
+      throw new Error(
+        'Groq API key is missing. Rebuild needs a real AI pass, not the offline fallback.',
+      )
+    }
     const local = localTailor(resume.rawText, job, matches)
     return {
       plan: local.plan,
@@ -97,7 +103,6 @@ export async function planAndGenerate(
     const partial = matches.filter((m) => m.status === 'partial')
     const strong = matches.filter((m) => m.status === 'strong')
     const missing = matches.filter((m) => m.status === 'missing' || m.status === 'unclear')
-    const deep = mode === 'deep'
 
     const runTailorCall = async (strict: boolean) =>
       callOpenAIJson<{
@@ -184,21 +189,6 @@ export async function planAndGenerate(
       applicable = filterApplicableChanges(resume.rawText, candidate)
     }
 
-    if (deep && applicable.length === 0 && (data.noChangeNeeded || []).length === 0) {
-      const local = localTailor(resume.rawText, job, matches)
-      if (local.plan.changes.length > 0) {
-        return {
-          plan: local.plan,
-          tailored: buildPreservedTailored(
-            resume.rawText,
-            local.plan.changes,
-            resume.name,
-            source,
-          ),
-        }
-      }
-    }
-
     const plan: TailoringPlan = {
       changes: applicable,
       notAdding: data.notAdding || [],
@@ -208,7 +198,6 @@ export async function planAndGenerate(
     }
 
     const tailored = buildPreservedTailored(resume.rawText, plan.changes, resume.name, source)
-    // Also record candidates that failed to apply
     const skipped = candidate.filter(
       (c) => !canApplyChange(resume.rawText, c.original) || isTrivialEdit(c.original, c.tailored),
     )
@@ -219,19 +208,7 @@ export async function planAndGenerate(
     return { plan, tailored }
   } catch (err) {
     console.error('[Fitline] tailor AI failed', err)
-    if (mode === 'deep') {
-      const local = localTailor(resume.rawText, job, matches)
-      if (local.plan.changes.length > 0) {
-        return {
-          plan: local.plan,
-          tailored: buildPreservedTailored(
-            resume.rawText,
-            local.plan.changes,
-            resume.name,
-            source,
-          ),
-        }
-      }
+    if (deep) {
       throw new Error(
         err instanceof Error
           ? `Could not tailor the resume: ${err.message}`

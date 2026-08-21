@@ -12,6 +12,9 @@ import {
 import { preserveWarning } from '@/lib/ai/render/preserve'
 import { buildOptimizeFullText } from '@/lib/ai/render/optimize'
 import { materializeDownloads } from '@/lib/generateDocs'
+import { extractTextFromBlob, looksBadlyExtracted } from '@/lib/parseResume'
+import { normalizeResumeExportText } from '@/lib/preserveFormat'
+import { getApiKey } from '@/lib/storage'
 
 export type ProgressFn = (stage: AnalysisStage, detail?: string) => void
 export type { ResumeSourceMeta }
@@ -20,6 +23,58 @@ function isDocxSource(fileName?: string, mimeType?: string) {
   const name = (fileName || '').toLowerCase()
   const mime = (mimeType || '').toLowerCase()
   return name.endsWith('.docx') || mime.includes('wordprocessingml')
+}
+
+function requireGroqForDeepWork() {
+  if (!getApiKey()) {
+    throw new Error(
+      'Groq API key is missing, so Fitline cannot run a real tailor pass. Set VITE_GROQ_API_KEY (or add a key in settings) and try again.',
+    )
+  }
+}
+
+/** Prefer a fresh DOCX extract over stale/corrupt stored PDF text. */
+async function resolveResumeText(
+  fallback: string,
+  source?: ResumeSourceMeta,
+  onProgress?: ProgressFn,
+): Promise<{ text: string; warnings: string[] }> {
+  const warnings: string[] = []
+  let text = normalizeResumeExportText((fallback || '').trim())
+
+  if (source?.blob && isDocxSource(source.fileName, source.mimeType)) {
+    try {
+      onProgress?.('extracting_resume', 'Re-reading your DOCX for clean text…')
+      text = await extractTextFromBlob(source.blob, source.fileName, source.mimeType, (m) =>
+        onProgress?.('extracting_resume', m),
+      )
+    } catch {
+      warnings.push('Could not re-read DOCX. Using the text saved from your last upload.')
+    }
+  } else if (source?.blob && looksBadlyExtracted(text)) {
+    try {
+      onProgress?.('extracting_resume', 'Re-reading your file to fix damaged PDF text…')
+      text = await extractTextFromBlob(source.blob, source.fileName, source.mimeType, (m) =>
+        onProgress?.('extracting_resume', m),
+      )
+    } catch {
+      // keep cleaned fallback
+    }
+  }
+
+  text = normalizeResumeExportText(text)
+
+  if (looksBadlyExtracted(text)) {
+    warnings.push(
+      'Resume text still looks damaged from PDF extraction. Upload a DOCX for accurate wording and layout.',
+    )
+  }
+
+  if (text.length < 40) {
+    throw new Error('Upload your resume first. Fitline needs your content.')
+  }
+
+  return { text, warnings }
 }
 
 export async function runAnalysisPipeline(args: {
@@ -41,10 +96,11 @@ export async function runAnalysisPipeline(args: {
   } = args
 
   onProgress?.('extracting_resume', 'Understanding every section of your resume…')
-  const userText = (resumeText || '').trim()
-  if (userText.length < 40) {
-    throw new Error('Upload your resume first. Fitline needs your content.')
-  }
+  const { text: userText, warnings: extractWarnings } = await resolveResumeText(
+    resumeText,
+    source,
+    onProgress,
+  )
 
   const resumeProfile = await extractResumeProfile(userText)
   resumeProfile.rawText = userText
@@ -78,7 +134,7 @@ export async function runAnalysisPipeline(args: {
     'deep',
   )
 
-  const warnings: string[] = []
+  const warnings: string[] = [...extractWarnings]
   const warn = preserveWarning(renderMode, exportSource.fileName, exportSource.mimeType)
   if (warn) warnings.push(warn)
 
@@ -129,8 +185,13 @@ export async function buildTailoredFromExistingPlan(
     blob: result.tailored?.sourceBlob,
   }
   const mode = result.renderMode || 'preserve'
-  let tailored = buildPreservedTailored(
+  const { text, warnings: extractWarnings } = await resolveResumeText(
     result.resumeProfile.rawText,
+    exportSource,
+    onProgress,
+  )
+  let tailored = buildPreservedTailored(
+    text,
     result.tailoring.changes,
     result.resumeProfile.name,
     exportSource,
@@ -139,7 +200,7 @@ export async function buildTailoredFromExistingPlan(
   if (mode === 'optimize') {
     tailored = {
       ...tailored,
-      fullText: buildOptimizeFullText(result.resumeProfile, tailored),
+      fullText: buildOptimizeFullText({ ...result.resumeProfile, rawText: text }, tailored),
       formatPreserved: false,
       renderMode: mode,
     }
@@ -148,7 +209,13 @@ export async function buildTailoredFromExistingPlan(
   }
 
   onProgress?.('done')
-  return { ...result, tailored, renderMode: mode }
+  return {
+    ...result,
+    resumeProfile: { ...result.resumeProfile, rawText: text },
+    tailored,
+    renderMode: mode,
+    warnings: [...(result.warnings || []), ...extractWarnings],
+  }
 }
 
 /**
@@ -159,7 +226,9 @@ export async function deepRebuildTailoredResume(
   onProgress?: ProgressFn,
   source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  onProgress?.('extracting_resume', 'Using your uploaded resume content…')
+  requireGroqForDeepWork()
+
+  onProgress?.('extracting_resume', 'Refreshing clean resume text…')
   const exportSource: ResumeSourceMeta = source || {
     fileName: result.tailored?.sourceFileName,
     mimeType: result.tailored?.sourceMimeType,
@@ -167,9 +236,15 @@ export async function deepRebuildTailoredResume(
   }
   const mode = result.renderMode || 'preserve'
 
+  const { text, warnings: extractWarnings } = await resolveResumeText(
+    result.resumeProfile.rawText,
+    exportSource,
+    onProgress,
+  )
+
   const resumeProfile = {
     ...result.resumeProfile,
-    rawText: result.resumeProfile.rawText,
+    rawText: text,
   }
 
   onProgress?.('matching', 'Re-checking every requirement against your resume…')
@@ -178,7 +253,7 @@ export async function deepRebuildTailoredResume(
   onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
   const fit = await assessFit(result.job, matches, resumeProfile)
 
-  onProgress?.('planning_tailor', 'Refreshing the tailoring plan for this job…')
+  onProgress?.('planning_tailor', 'Running a full Groq tailor pass for this job…')
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     result.job,
@@ -205,7 +280,7 @@ export async function deepRebuildTailoredResume(
   }
   const materialized = await materializeDownloads(withSource, { mode })
 
-  const warnings = [...(result.warnings || [])]
+  const warnings = [...(result.warnings || []), ...extractWarnings]
   const warn = preserveWarning(mode, exportSource.fileName, exportSource.mimeType)
   if (warn && !warnings.includes(warn)) warnings.push(warn)
 
@@ -227,13 +302,19 @@ export async function regenerateTailoredResume(
   onProgress?: ProgressFn,
   source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  onProgress?.('planning_tailor', 'Refreshing edits on your resume content…')
+  requireGroqForDeepWork()
+  onProgress?.('planning_tailor', 'Refreshing deep edit suggestions with Groq…')
   const exportSource: ResumeSourceMeta = source || {
     fileName: result.tailored?.sourceFileName,
     mimeType: result.tailored?.sourceMimeType,
     blob: result.tailored?.sourceBlob,
   }
-  const resumeProfile = result.resumeProfile
+  const { text, warnings: extractWarnings } = await resolveResumeText(
+    result.resumeProfile.rawText,
+    exportSource,
+    onProgress,
+  )
+  const resumeProfile = { ...result.resumeProfile, rawText: text }
   const { plan, tailored } = await planAndGenerate(
     resumeProfile,
     result.job,
@@ -249,10 +330,9 @@ export async function regenerateTailoredResume(
     tailoring: plan,
     tailored: withSource,
     renderMode: result.renderMode || 'preserve',
-    warnings: result.warnings || [],
+    warnings: [...(result.warnings || []), ...extractWarnings],
   }
 }
 
-// Re-export stages for tests / tooling
 export { extractResumeProfile, extractJob, matchRequirements, assessFit, planAndGenerate }
 export { isDocxSource }

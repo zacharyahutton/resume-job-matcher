@@ -1,6 +1,7 @@
 import mammoth from 'mammoth'
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { normalizeResumeExportText } from '@/lib/preserveFormat'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -53,20 +54,13 @@ export async function extractTextFromFile(
     name.endsWith('.docx')
   ) {
     onProgress?.('Reading DOCX…')
-    const arrayBuffer = await file.arrayBuffer()
-    const result = await mammoth.extractRawText({ arrayBuffer })
-    const text = cleanText(result.value)
-    if (!text) throw new Error('Could not read text from this DOCX file.')
-    return text
+    return extractDocxText(await file.arrayBuffer())
   }
 
   if (type === 'application/msword' || name.endsWith('.doc')) {
-    // Best-effort: some .doc files are mislabeled DOCX / zip packages
     try {
       onProgress?.('Trying to read DOC as DOCX…')
-      const arrayBuffer = await file.arrayBuffer()
-      const result = await mammoth.extractRawText({ arrayBuffer })
-      const text = cleanText(result.value)
+      const text = await extractDocxText(await file.arrayBuffer())
       if (text.length > 40) return text
     } catch {
       // fall through
@@ -76,17 +70,51 @@ export async function extractTextFromFile(
     )
   }
 
-  // Default: treat unknown / octet-stream / empty mime with .pdf (or no ext) as PDF attempt
-  if (type.includes('pdf') || name.endsWith('.pdf') || !name.includes('.') || type === 'application/octet-stream' || !type) {
+  if (
+    type.includes('pdf') ||
+    name.endsWith('.pdf') ||
+    !name.includes('.') ||
+    type === 'application/octet-stream' ||
+    !type
+  ) {
     return extractPdfText(file, onProgress)
   }
 
-  // Last resort: try PDF parser anyway (many browsers give empty mime)
   try {
     return await extractPdfText(file, onProgress)
   } catch {
     throw new Error('Could not read this file. Try PDF, DOCX, TXT, or a clear image of your resume.')
   }
+}
+
+/** Re-read text from a stored blob (prefer DOCX over stale/corrupt PDF extract). */
+export async function extractTextFromBlob(
+  blob: Blob,
+  fileName?: string,
+  mimeType?: string,
+  onProgress?: ExtractProgress,
+): Promise<string> {
+  const name = (fileName || '').toLowerCase()
+  const type = (mimeType || blob.type || '').toLowerCase()
+  const file = new File([blob], fileName || 'resume', {
+    type: type || 'application/octet-stream',
+  })
+  if (
+    type.includes('wordprocessingml') ||
+    name.endsWith('.docx') ||
+    type.includes('msword')
+  ) {
+    onProgress?.('Re-reading your DOCX for clean text…')
+    return extractDocxText(await blob.arrayBuffer())
+  }
+  return extractTextFromFile(file, onProgress)
+}
+
+async function extractDocxText(arrayBuffer: ArrayBuffer): Promise<string> {
+  const result = await mammoth.extractRawText({ arrayBuffer })
+  const text = cleanText(result.value)
+  if (!text) throw new Error('Could not read text from this DOCX file.')
+  return normalizeResumeExportText(text)
 }
 
 async function extractPdfText(file: File, onProgress?: ExtractProgress): Promise<string> {
@@ -112,16 +140,16 @@ async function extractPdfText(file: File, onProgress?: ExtractProgress): Promise
 
   for (let i = 1; i <= doc.numPages; i += 1) {
     const page = await doc.getPage(i)
-    const content = await page.getTextContent({ includeMarkedContent: true })
+    const content = await page.getTextContent({ includeMarkedContent: false })
     parts.push(rebuildPageText(content.items))
   }
 
   let text = cleanText(parts.join('\n\n'))
+  text = normalizeResumeExportText(text)
 
-  // Scanned / image-only PDF → OCR first pages
   if (text.length < 40) {
     onProgress?.('No text layer found. Running OCR…')
-    text = cleanText(await ocrPdfDocument(doc, onProgress))
+    text = normalizeResumeExportText(cleanText(await ocrPdfDocument(doc, onProgress)))
   }
 
   if (text.length < 20) {
@@ -130,44 +158,124 @@ async function extractPdfText(file: File, onProgress?: ExtractProgress): Promise
     )
   }
 
+  if (looksBadlyExtracted(text)) {
+    onProgress?.(
+      'PDF text looks damaged. Prefer uploading a DOCX for accurate Preserve and Rebuild.',
+    )
+  }
+
   return text
 }
 
+/** Heuristic: PDF glyph soup that will produce broken exports. */
+export function looksBadlyExtracted(text: string): boolean {
+  const t = text || ''
+  if (/rtmorentcog|781-\s*4\b|Platfor\s*m\s+I\s+/i.test(t)) return true
+  // Many single-letter tokens separated by spaces ("P l a t f o r m")
+  const spacedLetters = (t.match(/\b[A-Za-z]\s+[A-Za-z]\s+[A-Za-z]\b/g) || []).length
+  if (spacedLetters >= 4) return true
+  return false
+}
+
+type PdfTextItem = {
+  str: string
+  x: number
+  y: number
+  w: number
+}
+
+/**
+ * Rebuild page text with X/Y awareness so multi-column contact lines
+ * do not scramble into "Platform I r   rtmorentcog.org".
+ */
 function rebuildPageText(items: unknown[]): string {
-  const lines: string[] = []
-  let current = ''
-  let lastY: number | null = null
+  const parsed: PdfTextItem[] = []
 
   for (const raw of items) {
     if (!raw || typeof raw !== 'object') continue
-    const item = raw as { str?: string; transform?: number[]; hasEOL?: boolean }
-    if (typeof item.str !== 'string') continue
-
-    const y = item.transform ? item.transform[5] : null
-    if (lastY !== null && y !== null && Math.abs(y - lastY) > 6) {
-      if (current.trim()) lines.push(current.trim())
-      current = item.str
-    } else {
-      const needsSpace =
-        current.length > 0 &&
-        !current.endsWith(' ') &&
-        !current.endsWith('-') &&
-        item.str.length > 0 &&
-        !item.str.startsWith(' ')
-      current += needsSpace ? ` ${item.str}` : item.str
+    const item = raw as {
+      str?: string
+      transform?: number[]
+      width?: number
+      hasEOL?: boolean
     }
-
-    if (item.hasEOL) {
-      if (current.trim()) lines.push(current.trim())
-      current = ''
-      lastY = null
-    } else {
-      lastY = y
+    if (typeof item.str !== 'string' || !item.str) continue
+    if (item.str === ' ') {
+      // Keep explicit spaces from the PDF as soft spaces on the current run
     }
+    const transform = item.transform
+    if (!transform || transform.length < 6) continue
+    parsed.push({
+      str: item.str,
+      x: transform[4],
+      y: transform[5],
+      w: typeof item.width === 'number' ? item.width : estimateWidth(item.str),
+    })
   }
 
-  if (current.trim()) lines.push(current.trim())
-  return lines.join('\n')
+  if (!parsed.length) return ''
+
+  // Higher Y is higher on the page in PDF coords.
+  parsed.sort((a, b) => {
+    const dy = b.y - a.y
+    if (Math.abs(dy) > 2.5) return dy
+    return a.x - b.x
+  })
+
+  const lines: PdfTextItem[][] = []
+  let current: PdfTextItem[] = []
+  let lineY: number | null = null
+
+  for (const item of parsed) {
+    if (lineY === null || Math.abs(item.y - lineY) <= 3.2) {
+      current.push(item)
+      if (lineY === null) lineY = item.y
+      else lineY = (lineY * (current.length - 1) + item.y) / current.length
+    } else {
+      if (current.length) lines.push(current)
+      current = [item]
+      lineY = item.y
+    }
+  }
+  if (current.length) lines.push(current)
+
+  return lines.map(joinLineItems).filter(Boolean).join('\n')
+}
+
+function estimateWidth(str: string): number {
+  return Math.max(str.length * 4.5, 1)
+}
+
+function joinLineItems(items: PdfTextItem[]): string {
+  const sorted = [...items].sort((a, b) => a.x - b.x)
+  let out = ''
+  let prev: PdfTextItem | null = null
+
+  for (const item of sorted) {
+    const piece = item.str
+    if (!prev) {
+      out = piece
+      prev = item
+      continue
+    }
+
+    const prevEnd = prev.x + Math.max(prev.w, estimateWidth(prev.str) * 0.55)
+    const gap = item.x - prevEnd
+
+    if (gap > 28) {
+      // Large horizontal gap → column / contact separator
+      out += ' | ' + piece.trimStart()
+    } else if (gap > 1.8) {
+      if (!out.endsWith(' ') && !piece.startsWith(' ')) out += ' '
+      out += piece
+    } else {
+      // Adjacent glyphs (or tiny gap): concatenate without inventing spaces
+      out += piece
+    }
+    prev = item
+  }
+
+  return out.replace(/[ \t]{2,}/g, ' ').trim()
 }
 
 async function ocrPdfDocument(
@@ -232,7 +340,7 @@ async function extractTextFromImageFile(file: File, onProgress?: ExtractProgress
     if (cleaned.length < 20) {
       throw new Error('Could not read enough text from that image. Try a clearer photo or a PDF/DOCX.')
     }
-    return cleaned
+    return normalizeResumeExportText(cleaned)
   } finally {
     await worker.terminate()
   }

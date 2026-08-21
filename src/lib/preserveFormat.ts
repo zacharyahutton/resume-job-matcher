@@ -118,8 +118,8 @@ export function normalizeResumeExportText(text: string): string {
 }
 
 /**
- * Fix known OCR / corruption typos. Zachary-specific contact fixes only run
- * when the resume is clearly his, so other users keep their own details.
+ * Fix known OCR / PDF-extraction corruption. Common pipe/domain repairs run for
+ * everyone. Zachary-specific contact fixes only run when the resume is clearly his.
  */
 export function correctKnownResumeTypos(text: string): string {
   let t = text
@@ -131,30 +131,43 @@ export function correctKnownResumeTypos(text: string): string {
     [/\b2O2O\b/g, '2020'],
     [/gmai1\.com/gi, 'gmail.com'],
     [/verce1\.app/gi, 'vercel.app'],
+    // PDF often turns "|" into "I" between a label and a domain
+    [/\b(Agency|Ministry|Portfolio)\s+Platfor\s*m\s+I\s+/gi, '$1 Platform | '],
+    [/\b(Agency|Ministry|Portfolio)\s+Platform\s+I\s+/gi, '$1 Platform | '],
+    [/\bPlatfor\s*m\s+I\s+(?=\S)/gi, 'Platform | '],
+    [/\bPlatform\s+I\s+(?=[a-z0-9.-]+\.[a-z]{2,})/gi, 'Platform | '],
+    // Scrambled PNTCOG domain from bad PDF glyph order
+    [/\br\s*rtmorentcog\.org\b/gi, 'pntcog.org'],
+    [/rtmorentcog\.org/gi, 'pntcog.org'],
+    [/pntcog\.org\.org/gi, 'pntcog.org'],
     [/\s{2,}/g, ' '],
   ]
   for (const [re, to] of general) t = t.replace(re, to)
 
-  const isZachary = /zachary\s+hutton/i.test(t) || /hzach577/i.test(t)
+  const isZachary =
+    /zachary\s+hutton/i.test(t) ||
+    /hzach577/i.test(t) ||
+    /github\.com\/zacharyahutton/i.test(t)
   if (isZachary) {
     const zach: Array<[RegExp, string]> = [
-      [/hzach577n\s*gmai1\.com/gi, 'hzach577@gmail.com'],
-      [/hzach577ngmai1\.com/gi, 'hzach577@gmail.com'],
+      [/hzach577n\s*gmai1?\.com/gi, 'hzach577@gmail.com'],
+      [/hzach577ngmai1?\.com/gi, 'hzach577@gmail.com'],
+      [/hzach577\s*[@n]\s*gmail\.com/gi, 'hzach577@gmail.com'],
       [/linkedin\.com\/in\/zachary-hutton-azab8i4is/gi, 'linkedin.com/in/zachary-hutton-a2ab81415'],
       [/\bIweroi\.net\b/gi, 'weroi.net'],
-      [/Agency Platfor\s*m\s*I\s*weroi\.net/gi, 'Agency Platform | weroi.net'],
-      [/Agency Platform\s*I\s*weroi\.net/gi, 'Agency Platform | weroi.net'],
+      [/Agency Platform\s*\|\s*weroi\.net/gi, 'Agency Platform | weroi.net'],
+      [/Ministry Platform\s*\|\s*pntcog\.org/gi, 'Ministry Platform | pntcog.org'],
       [/\b2o25\b/g, '2025'],
       [/\b2o2O\b/g, '2020'],
       [/\bTendem\b/g, 'Telegram'],
       [/\*\s*\.me\/zachtedempbot/gi, 't.me/zachtedempbot'],
       [/I\s*\*\s*\.me\//gi, '| t.me/'],
-      [/r\s*rtmorentcog\.org/gi, ''],
-      [/Ministry Platfor\s*m\s*I\s*/gi, 'Ministry Platform | '],
       [/GPA:\s*3\.7\s*!\s*/g, 'GPA: 3.7 | '],
       [/May\s+song/gi, 'May 2029'],
+      // Truncated phone from PDF extract "(876) 781- 4"
       [/\(876\)\s*781-\s*4\b/g, '(876) 370-1398'],
-      [/\(8\s*7\s*6\)\s*7\s*81-\s*4/g, '(876) 370-1398'],
+      [/\(8\s*7\s*6\)\s*7\s*81-\s*4(?:\b|(?=\s|$))/g, '(876) 370-1398'],
+      [/\(876\)\s*781-\s*$/gm, '(876) 370-1398'],
     ]
     for (const [re, to] of zach) t = t.replace(re, to)
   }

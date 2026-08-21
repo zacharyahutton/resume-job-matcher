@@ -19,6 +19,8 @@ const STEPS = [
 ]
 
 const BUSY_STAGES: AnalysisStage[] = [
+  'extracting_resume',
+  'extracting_job',
   'matching',
   'assessing_fit',
   'planning_tailor',

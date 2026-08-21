@@ -10,10 +10,11 @@ const ANALYZE_STAGES: Array<{ id: AnalysisStage; label: string }> = [
 ]
 
 const REBUILD_STAGES: Array<{ id: AnalysisStage; label: string }> = [
+  { id: 'extracting_resume', label: 'Refreshing clean resume text' },
   { id: 'matching', label: 'Re-checking the job vs your resume' },
   { id: 'assessing_fit', label: 'Refreshing fit and gaps' },
-  { id: 'planning_tailor', label: 'Rewriting lines for this job' },
-  { id: 'generating', label: 'Fixing layout and exporting files' },
+  { id: 'planning_tailor', label: 'Running Groq tailor for this job' },
+  { id: 'generating', label: 'Building PDF and DOCX' },
 ]
 
 interface Props {
