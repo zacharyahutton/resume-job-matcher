@@ -12,6 +12,7 @@ import { saveAs } from 'file-saver'
 import type { RenderMode, TailoredResume } from '@/types'
 import { isDocxMime, normalizeResumeExportText } from '@/lib/preserveFormat'
 import { tailorDocxBlob } from '@/lib/tailorDocx'
+import { renderPreserveDocx } from '@/lib/ai/render/preserve'
 
 type LineKind = 'blank' | 'name' | 'contact' | 'heading' | 'job' | 'bullet' | 'body'
 
@@ -169,16 +170,9 @@ export async function materializeDownloads(
 
   const pdfBlob = await buildClassicPdfBlob(withText)
   let docxBlob: Blob
-  if (
-    mode === 'preserve' &&
-    withText.sourceBlob &&
-    isDocxMime(withText.sourceMimeType || '', withText.sourceFileName || '')
-  ) {
-    try {
-      docxBlob = await tailorDocxBlob(withText.sourceBlob, withText.appliedChanges || [])
-    } catch {
-      docxBlob = await buildClassicDocxBlob(withText)
-    }
+  if (mode === 'preserve') {
+    const preserved = await renderPreserveDocx(withText)
+    docxBlob = preserved || (await buildClassicDocxBlob(withText))
   } else {
     docxBlob = await buildClassicDocxBlob(withText)
   }

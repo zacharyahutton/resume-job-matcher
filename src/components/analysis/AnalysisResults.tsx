@@ -342,6 +342,13 @@ export function AnalysisResults({
             </ul>
           </div>
         ) : null}
+        {tailored?.skippedChanges?.length ? (
+          <p style={{ marginBottom: 16, fontSize: 14, color: '#7b878c' }}>
+            {tailored.skippedChanges.length} proposed edit
+            {tailored.skippedChanges.length === 1 ? '' : 's'} could not be applied to your file
+            (line not found or unsafe). Those were skipped.
+          </p>
+        ) : null}
         <p style={{ marginBottom: 20 }}>
           {tailoring.changes.length
             ? `${tailoring.changes.length} content change${tailoring.changes.length === 1 ? '' : 's'} planned.`
