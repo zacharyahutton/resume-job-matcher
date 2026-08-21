@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { AnalysisResults } from '@/components/analysis/AnalysisResults'
 import { AnalysisLoader } from '@/components/ui/AnalysisLoader'
@@ -10,7 +10,7 @@ import {
 } from '@/lib/ai/pipeline'
 import { downloadDocx, downloadPdf, materializeDownloads } from '@/lib/generateDocs'
 import { getResume } from '@/lib/storage'
-import type { AnalysisStage } from '@/types'
+import type { AnalysisStage, TailoredResume } from '@/types'
 
 const STEPS = [
   { n: 1, label: 'Resume' },
@@ -33,22 +33,26 @@ export function ResultsPage() {
   const [error, setError] = useState<string | null>(null)
   const [readyNote, setReadyNote] = useState<string | null>(null)
   const [loaderDetail, setLoaderDetail] = useState('Building your downloadable resume…')
+  const [awaitingVisual, setAwaitingVisual] = useState(false)
+  const [pendingDownload, setPendingDownload] = useState(false)
+  const pendingPdfRef = useRef<TailoredResume | null>(null)
+  const awaitingVisualRef = useRef(false)
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [])
 
   useEffect(() => {
-    if (stage === 'done' || stage === 'error') {
+    if (!awaitingVisual && (stage === 'done' || stage === 'error')) {
       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
     }
-  }, [stage])
+  }, [stage, awaitingVisual])
 
   if (!result) {
     return <Navigate to="/analyze" replace />
   }
 
-  const busy = BUSY_STAGES.includes(stage)
+  const busy = BUSY_STAGES.includes(stage) || awaitingVisual
 
   const sourceMeta = async () => {
     const stored = await getResume()
@@ -68,6 +72,9 @@ export function ResultsPage() {
   const onGenerate = async () => {
     setError(null)
     setReadyNote(null)
+    setPendingDownload(false)
+    awaitingVisualRef.current = false
+    setAwaitingVisual(false)
     setLoaderDetail('Starting a full rebuild for this job…')
     setStage('matching')
     try {
@@ -79,16 +86,35 @@ export function ResultsPage() {
       }
 
       setResult(next)
+      pendingPdfRef.current = next.tailored || null
+      setPendingDownload(true)
+      awaitingVisualRef.current = true
+      setAwaitingVisual(true)
       setStage('done')
       setReadyNote(
         next.tailoring.changes.length
           ? `Ready. ${next.tailoring.changes.length} edits applied. PDF downloading now.`
           : 'Ready. No wording changes were needed. PDF downloading now.',
       )
+    } catch (e) {
+      awaitingVisualRef.current = false
+      setAwaitingVisual(false)
+      setPendingDownload(false)
+      setStage('error')
+      setError(e instanceof Error ? e.message : 'Could not generate tailored resume.')
+    }
+  }
 
+  const finishRebuildVisual = async () => {
+    if (!awaitingVisualRef.current) return
+    awaitingVisualRef.current = false
+    setAwaitingVisual(false)
+    const tailored = pendingPdfRef.current
+    pendingPdfRef.current = null
+    if (pendingDownload && tailored) {
+      setPendingDownload(false)
       try {
-        await downloadPdf(next.tailored)
-        // DOCX is available from the Download button; PDF is the automatic export.
+        await downloadPdf(tailored)
       } catch (dlErr) {
         setError(
           dlErr instanceof Error
@@ -96,9 +122,8 @@ export function ResultsPage() {
             : 'Built successfully, but PDF download was blocked. Use Download PDF.',
         )
       }
-    } catch (e) {
-      setStage('error')
-      setError(e instanceof Error ? e.message : 'Could not generate tailored resume.')
+    } else {
+      setPendingDownload(false)
     }
   }
 
@@ -106,15 +131,22 @@ export function ResultsPage() {
   const onRefreshSuggestions = async () => {
     setError(null)
     setReadyNote(null)
+    setPendingDownload(false)
+    awaitingVisualRef.current = false
+    setAwaitingVisual(false)
     setLoaderDetail('Refreshing deep edit suggestions…')
     setStage('planning_tailor')
     try {
       const source = await sourceMeta()
       const next = await regenerateTailoredResume(result, onProgress, source)
       setResult(next)
+      awaitingVisualRef.current = true
+      setAwaitingVisual(true)
       setStage('done')
       setReadyNote('Suggestions updated. Click Rebuild & download to apply and export.')
     } catch (e) {
+      awaitingVisualRef.current = false
+      setAwaitingVisual(false)
       setStage('error')
       setError(e instanceof Error ? e.message : 'Could not refresh suggestions.')
     }
@@ -173,7 +205,14 @@ export function ResultsPage() {
         </p>
 
         {busy ? (
-          <AnalysisLoader stage={stage} detail={loaderDetail} mode="rebuild" />
+          <AnalysisLoader
+            stage={stage}
+            detail={loaderDetail}
+            mode="rebuild"
+            onVisualComplete={() => {
+              void finishRebuildVisual()
+            }}
+          />
         ) : (
           <div className="fl-stagger">
             <AnalysisResults

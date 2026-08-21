@@ -104,17 +104,34 @@ function looksLikeLeak(s: string): boolean {
 
 /** Clean extracted/AI text before layout rebuild (bullets, dashes, junk glyphs). */
 export function normalizeResumeExportText(text: string): string {
-  return correctKnownResumeTypos(
-    text
-      .replace(/\u00a0/g, ' ')
-      .replace(/[«»‹›]/g, '•')
-      .replace(/^[•\u2022▪]+\s*/gm, '• ')
-      .replace(/^[+]\s+/gm, '• ')
-      .replace(/[–—]/g, '-')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
+  return restoreResumeStructure(
+    correctKnownResumeTypos(
+      text
+        .replace(/\u00a0/g, ' ')
+        .replace(/[«»‹›]/g, '•')
+        .replace(/^[•\u2022▪]+\s*/gm, '• ')
+        .replace(/^[+]\s+/gm, '• ')
+        .replace(/[–—]/g, '-')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim(),
+    ),
   )
+}
+
+const SECTION_HEADING_NAMES =
+  'SUMMARY|PROFESSIONAL SUMMARY|PROFILE|OBJECTIVE|EXPERIENCE|WORK EXPERIENCE|PROFESSIONAL EXPERIENCE|EDUCATION|SKILLS|TECHNICAL SKILLS|TECHNICAL DOCUMENTATION|PROJECTS|SELECTED PROJECTS|CERTIFICATIONS|ACHIEVEMENTS|LANGUAGES|TOOLS|TECHNOLOGIES'
+
+/** Put section headings back on their own lines when they got glued to body text. */
+function restoreResumeStructure(text: string): string {
+  let t = text
+  // "SUMMARY Software developer…" → "SUMMARY\nSoftware developer…"
+  t = t.replace(new RegExp(`\\b(${SECTION_HEADING_NAMES})\\b[ \\t]+(?=\\S)`, 'gi'), '$1\n')
+  // Ensure bullets start on their own line when mid-paragraph
+  t = t.replace(/([^\n])[ \\t]*([•\u2022▪])[ \\t]+/g, '$1\n• ')
+  // Soft blank line before section headings
+  t = t.replace(new RegExp(`([^\\n])\\n(${SECTION_HEADING_NAMES})\\b`, 'gi'), '$1\n\n$2')
+  return t.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /**
@@ -140,7 +157,8 @@ export function correctKnownResumeTypos(text: string): string {
     [/\br\s*rtmorentcog\.org\b/gi, 'pntcog.org'],
     [/rtmorentcog\.org/gi, 'pntcog.org'],
     [/pntcog\.org\.org/gi, 'pntcog.org'],
-    [/\s{2,}/g, ' '],
+    // Horizontal spaces only. Never collapse newlines (that flattens the whole resume).
+    [/[^\S\n]{2,}/g, ' '],
   ]
   for (const [re, to] of general) t = t.replace(re, to)
 

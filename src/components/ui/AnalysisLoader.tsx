@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AnalysisStage } from '@/types'
 
 const ANALYZE_STAGES: Array<{ id: AnalysisStage; label: string }> = [
@@ -12,7 +12,7 @@ const ANALYZE_STAGES: Array<{ id: AnalysisStage; label: string }> = [
 
 const REBUILD_STAGES: Array<{ id: AnalysisStage; label: string }> = [
   { id: 'extracting_resume', label: 'Refreshing clean resume text' },
-  { id: 'matching', label: 'Re-checking the job vs your resume' },
+  { id: 'matching', label: 'Re-checking every requirement' },
   { id: 'assessing_fit', label: 'Refreshing fit and gaps' },
   { id: 'planning_tailor', label: 'Planning changes' },
   { id: 'generating', label: 'Building PDF and DOCX' },
@@ -57,30 +57,75 @@ const ROTATING_TIPS: Record<string, string[]> = {
   ],
 }
 
+/** How long each checklist tick stays before advancing when work is already ahead. */
+const TICK_MS = 1000
+
 interface Props {
   stage: AnalysisStage
   detail?: string
   mode?: 'analyze' | 'rebuild'
+  /** Fires once after stage is done and the bar has ticked through to 100%. */
+  onVisualComplete?: () => void
 }
 
-export function AnalysisLoader({ stage, detail, mode = 'analyze' }: Props) {
+export function AnalysisLoader({ stage, detail, mode = 'analyze', onVisualComplete }: Props) {
   const stages = mode === 'rebuild' ? REBUILD_STAGES : ANALYZE_STAGES
   const order = stages.map((s) => s.id)
-  const current = Math.max(0, order.indexOf(stage))
-  const progress = Math.min(96, Math.round(((current + 1) / stages.length) * 100))
+  const finished = stage === 'done'
+  const realIndex = finished
+    ? stages.length
+    : Math.max(0, order.indexOf(stage))
+
+  const [displayIndex, setDisplayIndex] = useState(0)
+  const [progress, setProgress] = useState(4)
+  const completedRef = useRef(false)
+
+  useEffect(() => {
+    setDisplayIndex(0)
+    setProgress(4)
+    completedRef.current = false
+  }, [mode])
+
+  useEffect(() => {
+    if (stage === 'idle' || stage === 'error') return
+
+    const id = window.setInterval(() => {
+      setDisplayIndex((i) => (i < realIndex ? i + 1 : i))
+    }, TICK_MS)
+    // Kick once immediately so local-fast stages don't sit on 0% for a full second.
+    setDisplayIndex((i) => (i < realIndex ? i + 1 : i))
+    return () => window.clearInterval(id)
+  }, [stage, realIndex])
+
+  useEffect(() => {
+    if (finished && displayIndex >= stages.length) {
+      setProgress(100)
+      if (!completedRef.current) {
+        completedRef.current = true
+        onVisualComplete?.()
+      }
+      return
+    }
+    const capped = Math.min(displayIndex, stages.length - 1)
+    const base = ((capped + 1) / stages.length) * 92
+    setProgress(Math.max(4, Math.min(96, Math.round(base))))
+  }, [displayIndex, stages.length, finished, onVisualComplete])
+
+  const visualStageId = finished && displayIndex >= stages.length
+    ? stages[stages.length - 1]?.id
+    : stages[Math.min(displayIndex, stages.length - 1)]?.id || stage
 
   const tips = useMemo(() => {
-    const list = ROTATING_TIPS[stage] || ['Working…']
-    // Prefer live detail as the first tip when it arrives, then rotate the rest.
-    if (detail && !list.includes(detail)) return [detail, ...list]
+    const list = ROTATING_TIPS[visualStageId || ''] || ['Working…']
+    if (detail && !list.includes(detail) && visualStageId === stage) return [detail, ...list]
     return list
-  }, [stage, detail])
+  }, [visualStageId, detail, stage])
 
   const [tipIndex, setTipIndex] = useState(0)
 
   useEffect(() => {
     setTipIndex(0)
-  }, [stage])
+  }, [visualStageId])
 
   useEffect(() => {
     if (tips.length <= 1) return
@@ -90,7 +135,11 @@ export function AnalysisLoader({ stage, detail, mode = 'analyze' }: Props) {
     return () => window.clearInterval(id)
   }, [tips])
 
-  const line = tips[tipIndex % tips.length] || detail || stages[current]?.label || 'Analyzing…'
+  const line =
+    tips[tipIndex % tips.length] ||
+    detail ||
+    stages[Math.min(displayIndex, stages.length - 1)]?.label ||
+    'Analyzing…'
 
   return (
     <div className="fl-loader-panel" role="status" aria-live="polite">
@@ -102,7 +151,11 @@ export function AnalysisLoader({ stage, detail, mode = 'analyze' }: Props) {
       <h3 style={{ marginBottom: 6 }}>
         {mode === 'rebuild' ? 'Rebuilding your tailored resume' : 'Working on it'}
       </h3>
-      <p key={`${stage}-${tipIndex}`} className="fl-loader-detail" style={{ margin: 0, color: '#7b878c' }}>
+      <p
+        key={`${visualStageId}-${tipIndex}`}
+        className="fl-loader-detail"
+        style={{ margin: 0, color: '#7b878c' }}
+      >
         {line}
       </p>
       <div className="fl-dots" aria-hidden="true">
@@ -117,8 +170,8 @@ export function AnalysisLoader({ stage, detail, mode = 'analyze' }: Props) {
 
       <div className="fl-stage-list">
         {stages.map((s, i) => {
-          const done = i < current || stage === 'done'
-          const active = i === current && stage !== 'done'
+          const done = displayIndex > i || (finished && displayIndex >= stages.length)
+          const active = displayIndex === i && !(finished && displayIndex >= stages.length)
           return (
             <div
               key={s.id}

@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react'
+﻿import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { JobInput } from '@/components/job/JobInput'
 import { ResumePanel } from '@/components/resume/ResumePanel'
@@ -24,8 +24,11 @@ export function AnalyzePage() {
   const [detail, setDetail] = useState<string | undefined>()
   const [runError, setRunError] = useState<string | null>(null)
   const [justSaved, setJustSaved] = useState(false)
+  const [awaitingVisual, setAwaitingVisual] = useState(false)
+  const awaitingVisualRef = useRef(false)
 
-  const running = stage !== 'idle' && stage !== 'done' && stage !== 'error'
+  const running =
+    awaitingVisual || (stage !== 'idle' && stage !== 'done' && stage !== 'error')
 
   const currentStep = useMemo(() => {
     if (running) return 2
@@ -40,6 +43,8 @@ export function AnalyzePage() {
     renderMode: RenderMode
   }) => {
     setRunError(null)
+    awaitingVisualRef.current = false
+    setAwaitingVisual(false)
 
     if (!resume) {
       setRunError('Upload your resume first (step 1).')
@@ -72,13 +77,23 @@ export function AnalyzePage() {
       })
 
       setResult(result)
+      awaitingVisualRef.current = true
+      setAwaitingVisual(true)
       setStage('done')
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-      navigate('/results')
     } catch (e) {
+      awaitingVisualRef.current = false
+      setAwaitingVisual(false)
       setStage('error')
       setRunError(e instanceof Error ? e.message : 'Analysis failed. Please try again.')
     }
+  }
+
+  const finishVisual = () => {
+    if (!awaitingVisualRef.current) return
+    awaitingVisualRef.current = false
+    setAwaitingVisual(false)
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    navigate('/results')
   }
 
   return (
@@ -94,7 +109,7 @@ export function AnalyzePage() {
         </div>
 
         {running ? (
-          <AnalysisLoader stage={stage} detail={detail} />
+          <AnalysisLoader stage={stage} detail={detail} onVisualComplete={finishVisual} />
         ) : (
           <>
             <section className={`fl-enter fl-enter-delay-2 ${justSaved ? 'fl-upload-flash' : ''}`}>

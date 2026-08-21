@@ -378,7 +378,7 @@
   background: linear-gradient(90deg, #0000ff, #2332dd, #abfb4f);
   background-size: 200% 100%;
   animation: fl-shimmer 1s linear infinite;
-  transition: width 0.35s ease;
+  transition: width 0.85s ease;
 }
 
 /* Skeleton */

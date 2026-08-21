@@ -41,6 +41,20 @@ function looksLikeHeading(line: string): boolean {
   return false
 }
 
+/** If a section heading was glued to body text, split them. */
+function peelHeading(line: string): { heading: string; rest: string } | null {
+  const m = line
+    .trim()
+    .match(
+      /^(EXPERIENCE|WORK EXPERIENCE|PROFESSIONAL EXPERIENCE|EDUCATION|SKILLS|TECHNICAL SKILLS|TECHNICAL DOCUMENTATION|SUMMARY|PROFESSIONAL SUMMARY|PROJECTS|SELECTED PROJECTS|CERTIFICATIONS|ACHIEVEMENTS|PROFILE|OBJECTIVE|LANGUAGES|TOOLS|TECHNOLOGIES)\b[:.\s]*(.+)$/i,
+    )
+  if (!m || !m[2]?.trim()) return null
+  // Only peel when the rest is clearly body (not another short ALL CAPS label)
+  const rest = m[2].trim()
+  if (rest.length < 8) return null
+  return { heading: m[1].replace(/[:.\s]+$/, ''), rest }
+}
+
 function looksLikeContact(line: string): boolean {
   const t = line.trim()
   return (
@@ -56,12 +70,15 @@ const DATE_TAIL =
 
 function splitJobLine(line: string): { left: string; right: string } | null {
   const t = line.trim()
+  // Job title lines are short. Long paragraphs that happen to end in a date
+  // must stay body text or dates float to the wrong place in the PDF.
+  if (t.length > 110) return null
   const spaced = t.match(/^(.+?)\s{2,}(.+)$/)
-  if (spaced && DATE_TAIL.test(spaced[2])) {
+  if (spaced && DATE_TAIL.test(spaced[2]) && spaced[1].trim().length <= 90) {
     return { left: spaced[1].trim(), right: spaced[2].trim() }
   }
   const m = t.match(DATE_TAIL)
-  if (m && m.index != null && m.index > 8) {
+  if (m && m.index != null && m.index > 8 && m.index < 90) {
     return { left: t.slice(0, m.index).trim().replace(/[|,]+$/, '').trim(), right: m[1].trim() }
   }
   return null
@@ -86,6 +103,14 @@ function classifyLines(rawLines: string[]): Array<{ kind: LineKind; text: string
     const t = text.trim()
     if (!t) {
       out.push({ kind: 'blank', text: '' })
+      continue
+    }
+    const peeled = peelHeading(t)
+    if (peeled) {
+      out.push({ kind: 'heading', text: peeled.heading })
+      out.push({ kind: 'body', text: peeled.rest })
+      contactBudget = 0
+      headerDone = true
       continue
     }
     if (looksLikeHeading(t)) {
