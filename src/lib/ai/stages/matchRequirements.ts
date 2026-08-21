@@ -72,7 +72,7 @@ export async function matchRequirements(
 
     return [...fromAi, ...missing]
   } catch (err) {
-    if (err instanceof Error && err.name === 'GroqUserError') throw err
+    console.warn('[Fitline] match falling back to local', err)
     return localMatch(job, resume.rawText)
   }
 }

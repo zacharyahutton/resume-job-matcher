@@ -41,7 +41,7 @@ export async function extractJob(rawText: string): Promise<JobExtraction> {
       requirements: data.requirements || [],
     }
   } catch (err) {
-    if (err instanceof Error && err.name === 'GroqUserError') throw err
+    console.warn('[Fitline] extract job falling back to local', err)
     return localExtractJob(rawText)
   }
 }

@@ -80,7 +80,7 @@ export async function assessFit(
 
     return withCounts(data, matches)
   } catch (err) {
-    if (err instanceof Error && err.name === 'GroqUserError') throw err
+    console.warn('[Fitline] fit falling back to local', err)
     return localAssessFit(matches)
   }
 }

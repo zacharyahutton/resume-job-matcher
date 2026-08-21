@@ -101,7 +101,8 @@ export async function extractResumeProfile(rawText: string): Promise<ResumeProfi
       extractionNotes: data.extractionNotes || [],
     }
   } catch (err) {
-    if (err instanceof Error && err.name === 'GroqUserError') throw err
+    // Keep the pipeline moving. Early stages can use local fallback if Groq is saturated.
+    console.warn('[Fitline] extract resume falling back to local', err)
     return localExtractResume(rawText)
   }
 }

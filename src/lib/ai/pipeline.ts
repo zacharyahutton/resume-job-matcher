@@ -15,6 +15,7 @@ import { materializeDownloads } from '@/lib/generateDocs'
 import { extractTextFromBlob, looksBadlyExtracted } from '@/lib/parseResume'
 import { normalizeResumeExportText } from '@/lib/preserveFormat'
 import { getApiKeys } from '@/lib/storage'
+import { bindGroqStatus } from '@/lib/ai/client'
 
 export type ProgressFn = (stage: AnalysisStage, detail?: string) => void
 export type { ResumeSourceMeta }
@@ -113,6 +114,10 @@ export async function runAnalysisPipeline(args: {
     materialize = false,
   } = args
 
+  let activeStage: AnalysisStage = 'extracting_resume'
+  bindGroqStatus((message) => onProgress?.(activeStage, message))
+
+  try {
   onProgress?.('extracting_resume', 'Understanding every section of your resume…')
   const { text: userText, warnings: extractWarnings } = await resolveResumeText(
     resumeText,
@@ -120,6 +125,7 @@ export async function runAnalysisPipeline(args: {
     onProgress,
   )
 
+  onProgress?.('extracting_resume', 'Talking to Groq about your resume…')
   const resumeProfile = await extractResumeProfile(userText)
   resumeProfile.rawText = userText
 
@@ -130,8 +136,9 @@ export async function runAnalysisPipeline(args: {
   }
 
   // Pace Groq calls: free-tier TPM is org-wide (~8k/min). Bursting 5 stages fails.
-  const pace = () => new Promise((r) => setTimeout(r, 1800))
+  const pace = () => new Promise((r) => setTimeout(r, 1200))
 
+  activeStage = 'extracting_job'
   onProgress?.('extracting_job', 'Listing every must-have and nice-to-have…')
   await pace()
   const job = await extractJob(jobText)
@@ -141,14 +148,17 @@ export async function runAnalysisPipeline(args: {
     )
   }
 
+  activeStage = 'matching'
   onProgress?.('matching', 'Comparing your evidence to what they want…')
   await pace()
   const matches = await matchRequirements(job, resumeProfile)
 
+  activeStage = 'assessing_fit'
   onProgress?.('assessing_fit', 'Deciding fit, gaps, and interview odds…')
   await pace()
   const fit = await assessFit(job, matches, resumeProfile)
 
+  activeStage = 'planning_tailor'
   onProgress?.('planning_tailor', 'Deciding what to change and what to leave alone…')
   await pace()
   const { plan, tailored } = await planAndGenerate(
@@ -178,6 +188,7 @@ export async function runAnalysisPipeline(args: {
   }
 
   if (materialize) {
+    activeStage = 'generating'
     onProgress?.('generating', 'Building your downloadable resume…')
     finalTailored = await materializeDownloads(finalTailored, { mode: renderMode })
   }
@@ -194,6 +205,9 @@ export async function runAnalysisPipeline(args: {
     renderMode,
     warnings,
     analyzedAt: Date.now(),
+  }
+  } finally {
+    bindGroqStatus(null)
   }
 }
 
@@ -253,6 +267,10 @@ export async function deepRebuildTailoredResume(
 ): Promise<AnalysisResult> {
   requireGroqForDeepWork()
 
+  let activeStage: AnalysisStage = 'extracting_resume'
+  bindGroqStatus((message) => onProgress?.(activeStage, message))
+
+  try {
   onProgress?.('extracting_resume', 'Refreshing clean resume text…')
   const exportSource: ResumeSourceMeta = source || {
     fileName: result.tailored?.sourceFileName,
@@ -272,16 +290,19 @@ export async function deepRebuildTailoredResume(
     rawText: text,
   }
 
-  const pace = () => new Promise((r) => setTimeout(r, 1800))
+  const pace = () => new Promise((r) => setTimeout(r, 1200))
 
+  activeStage = 'matching'
   onProgress?.('matching', 'Re-checking every requirement against your resume…')
   await pace()
   const matches = await matchRequirements(result.job, resumeProfile)
 
+  activeStage = 'assessing_fit'
   onProgress?.('assessing_fit', 'Refreshing fit, gaps, and interview odds…')
   await pace()
   const fit = await assessFit(result.job, matches, resumeProfile)
 
+  activeStage = 'planning_tailor'
   onProgress?.('planning_tailor', 'Running a full Groq tailor pass for this job…')
   await pace()
   const { plan, tailored } = await planAndGenerate(
@@ -292,6 +313,7 @@ export async function deepRebuildTailoredResume(
     'deep',
   )
 
+  activeStage = 'generating'
   onProgress?.(
     'generating',
     mode === 'preserve' ? 'Applying edits to your layout…' : 'Building Fitline layout…',
@@ -324,6 +346,9 @@ export async function deepRebuildTailoredResume(
     tailored: materialized,
     renderMode: mode,
     warnings,
+  }
+  } finally {
+    bindGroqStatus(null)
   }
 }
 

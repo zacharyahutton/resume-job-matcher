@@ -27,13 +27,30 @@ const GROQ_MODEL = 'openai/gpt-oss-20b'
 const DEFAULT_MAX_TOKENS = 1200
 const MAX_USER_CHARS = 5500
 const MAX_SYSTEM_CHARS = 1800
-const MAX_ATTEMPTS = 8
+const MAX_ATTEMPTS = 5
+const MAX_WAIT_MS = 16000
 
 
 export class GroqUserError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'GroqUserError'
+  }
+}
+
+type StatusFn = (message: string) => void
+let statusHook: StatusFn | null = null
+
+/** Pipeline binds this so Groq waits update the loader text. */
+export function bindGroqStatus(fn: StatusFn | null) {
+  statusHook = fn
+}
+
+function reportStatus(message: string) {
+  try {
+    statusHook?.(message)
+  } catch {
+    // ignore UI hook errors
   }
 }
 
@@ -67,7 +84,7 @@ function parseRetryMs(errText: string): number {
   const sec = Number(m[1])
   if (!Number.isFinite(sec) || sec <= 0) return 8000
   // Honor Groq's wait, with a little buffer. Cap so UI does not freeze forever.
-  return Math.min(Math.ceil(sec * 1000) + 400, 45000)
+  return Math.min(Math.ceil(sec * 1000) + 400, MAX_WAIT_MS)
 }
 
 function isRateOrSizeLimit(status: number): boolean {
@@ -147,7 +164,13 @@ export async function callOpenAIJson<T>(args: {
   let lastErr: unknown
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    const useObjectFormat = attempt >= 2
+    reportStatus(
+      attempt === 0
+        ? 'Talking to Groq…'
+        : `Still working with Groq (try ${attempt + 1} of ${MAX_ATTEMPTS})…`,
+    )
+    // Prefer json_object after first try — stricter json_schema burns tokens and fails more on free tier.
+    const useObjectFormat = attempt >= 1
     const responseFormat: Record<string, unknown> = useObjectFormat
       ? { type: 'json_object' }
       : {
@@ -193,30 +216,32 @@ export async function callOpenAIJson<T>(args: {
       } catch (err) {
         lastErr = err
         const status = (err as { status?: number }).status
-        const retryMs = (err as { retryMs?: number }).retryMs || 8000
+        const retryMs = Math.min((err as { retryMs?: number }).retryMs || 8000, MAX_WAIT_MS)
         advanceKeyRotation()
 
         if (status && isRateOrSizeLimit(status)) {
           sawRateLimit = true
           if (status === 413) {
-            // Request itself is too large for the org TPM window — shrink hard.
             user = user.slice(0, Math.floor(user.length * 0.65))
             system = system.slice(0, Math.floor(system.length * 0.85))
-            maxTokens = Math.max(600, Math.floor(maxTokens * 0.7))
+            maxTokens = Math.max(500, Math.floor(maxTokens * 0.7))
+            reportStatus('Shrinking the request so Groq can accept it…')
             console.warn('[Fitline] Groq request too large, shrinking and retrying')
           } else {
-            console.warn(`[Fitline] Groq rate limited, waiting ${Math.ceil(retryMs / 1000)}s`)
+            const secs = Math.ceil(retryMs / 1000)
+            reportStatus(`Groq is at capacity. Waiting ${secs}s, then continuing…`)
+            console.warn(`[Fitline] Groq rate limited, waiting ${secs}s`)
             await sleep(retryMs)
           }
-          break // next attempt with wait/shrink applied
-        }
-
-        if (status && status >= 500) {
-          await sleep(1500)
           break
         }
 
-        // Auth / other: try next key in this attempt
+        if (status && status >= 500) {
+          reportStatus('Groq hiccup. Retrying…')
+          await sleep(1200)
+          break
+        }
+
         console.error('[Fitline] Groq request failed', status || err)
       }
     }
