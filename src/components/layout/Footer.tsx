@@ -60,11 +60,11 @@ export function Footer() {
           <div className="zubuz-copywright">
             <p>
               <a
-                href="https://zacharyhutton.online"
+                href="https://zacharyhutton.online/"
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="noopener"
               >
-                Made by Zachary
+                Website by Zachary Hutton
               </a>
               {' · '}© {new Date().getFullYear()} Fitline
             </p>
