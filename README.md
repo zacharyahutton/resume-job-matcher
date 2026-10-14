@@ -1,44 +1,69 @@
-# Fitline
+﻿# resume-job-matcher
 
-Resume tailoring aimed at one outcome: help you get the interview for the job you want. Built on the visual language of the Zubaz SaaS template, fully redesigned for this product.
+A React app that compares a resume with a job posting, shows which requirements you already meet and which you are missing, and then exports a tailored DOCX or PDF built only from your real experience.
 
-**Get the interview. Keep the truth.**
+Most resume tools I tried either rewrote everything in generic language or quietly added skills the person did not have. I wanted something that tells you honestly where you stand and only rewords and reorders what is already true.
 
-## What it does
+## Features
 
-- Upload resume once (PDF / DOCX / TXT / image OCR), stored in IndexedDB on-device
-- Add a job via screenshot OCR, paste, or typed requirements
-- Staged pipeline: resume extraction → job extraction → matching → feedback → tailoring → download
-- Clear feedback on what helps you get the interview, and what to fix
-- Tailored PDF/DOCX from your real experience only (never invents skills)
+- Upload a resume once as PDF, DOCX, TXT or an image (OCR). It is stored in IndexedDB in your browser, not on a server.
+- Add a job by pasting the text, typing requirements, or uploading a screenshot of the posting
+- Requirement by requirement match with a fit score and plain feedback
+- Tailored resume export to DOCX and PDF that keeps the original layout where possible
+- Works without an API key using a local keyword and skill matcher, so the full flow can be demoed offline
+- Optional Groq LLM stages for better extraction and matching, with key rotation when one key hits its rate limit
 
-## Quick start
+## Stack
+
+React 19, TypeScript, Vite, React Router, Zod, IndexedDB (`idb`), pdf.js, mammoth, Tesseract.js, docx, jsPDF, JSZip.
+
+## How it works
+
+The analysis runs as a staged pipeline in `src/lib/ai/pipeline.ts`:
+
+1. **Extract resume**: parse text from the uploaded file (`parseResume.ts`, `ocr.ts`) and turn it into a structured profile.
+2. **Extract job**: pull requirements out of the posting and validate the input (`jobInputGuard.ts`).
+3. **Match**: compare each requirement with the resume (`stages/matchRequirements.ts`).
+4. **Assess fit**: score the match and write feedback (`stages/assessFit.ts`).
+5. **Plan and tailor**: decide what to reword or reorder, then apply the changes to the original text (`stages/planTailor.ts`, `preserveFormat.ts`, `tailorDocx.ts`).
+6. **Export**: build the DOCX and PDF downloads (`generateDocs.ts`).
+
+Every stage has a local fallback in `localEngine.ts`, and every LLM response is validated with Zod before it is used.
+
+## Setup
 
 ```bash
+git clone https://github.com/zacharyahutton/resume-job-matcher.git
+cd resume-job-matcher
 npm install
 npm run dev
 ```
 
-Open the local URL Vite prints (usually `http://localhost:5173`).
+Open the URL Vite prints (usually http://localhost:5173).
 
-### Optional AI key
+To use the LLM stages, copy `.env.example` to `.env` and set `VITE_GROQ_API_KEY`. Note that `VITE_` variables end up in the browser bundle, so only use a key you are fine exposing for a demo. Without a key the local matcher runs.
 
-Fitline uses **Groq**. For local or production, set `VITE_GROQ_API_KEY` in `.env` or your host env (Vercel, etc.). There is no API key field in the public UI.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Development server |
+| `npm run build` | Type check and production build |
+| `npm run preview` | Preview the production build |
 
-Without a key, a local matcher still runs for demos.
+## Project structure
 
-## Scripts
+```
+src/
+  pages/          Home, Resume, Analyze, Results, Privacy, Terms
+  components/     resume upload, job input, analysis results, layout
+  hooks/          resume storage and analysis state
+  lib/
+    ai/           pipeline, stages, Groq client and key pool, local engine
+    parseResume.ts, ocr.ts, preserveFormat.ts, tailorDocx.ts, generateDocs.ts
+  types/          shared TypeScript types
+```
 
-| Command           | Description              |
-|-------------------|--------------------------|
-| `npm run dev`     | Start development server |
-| `npm run build`   | Production build         |
-| `npm run preview` | Preview production build |
+## Roadmap
 
-## Stack
-
-React + TypeScript + Vite · IndexedDB (`idb`) · Tesseract.js · pdf.js · mammoth · docx · jsPDF · Zod · Groq structured JSON (optional)
-
-## Privacy
-
-Resume files and text stay in the browser. Server-side AI uses an env-configured key, not a user-facing key field.
+- Move LLM calls behind a small server endpoint so no key ships to the browser
+- Unit tests for the local matcher and the format-preserving rewrite
+- Side by side diff view of original and tailored resume
