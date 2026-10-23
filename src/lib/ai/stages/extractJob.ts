@@ -1,7 +1,6 @@
 import type { JobExtraction } from '@/types'
-import { callOpenAIJson, jobExtractionSchema } from '@/lib/ai/client'
+import { callOpenAIJson, isAiAvailable, jobExtractionSchema } from '@/lib/ai/client'
 import { localExtractJob } from '@/lib/ai/localEngine'
-import { getApiKeys } from '@/lib/storage'
 
 function nullToUndef<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
@@ -9,7 +8,7 @@ function nullToUndef<T>(v: T | null | undefined): T | undefined {
 
 /** Job posting → Job Model. */
 export async function extractJob(rawText: string): Promise<JobExtraction> {
-  if (!getApiKeys().length) return localExtractJob(rawText)
+  if (!(await isAiAvailable())) return localExtractJob(rawText)
 
   try {
     const data = await callOpenAIJson<{

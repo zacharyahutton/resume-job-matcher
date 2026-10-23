@@ -10,8 +10,7 @@ import { buildOptimizeFullText } from '@/lib/ai/render/optimize'
 import { materializeDownloads } from '@/lib/generateDocs'
 import { extractTextFromBlob, looksBadlyExtracted } from '@/lib/parseResume'
 import { normalizeResumeExportText } from '@/lib/preserveFormat'
-import { getApiKeys } from '@/lib/storage'
-import { bindGroqStatus } from '@/lib/ai/client'
+import { bindGroqStatus, isAiAvailable } from '@/lib/ai/client'
 import {
   localAssessFit,
   localExtractJob,
@@ -29,8 +28,8 @@ function isDocxSource(fileName?: string, mimeType?: string) {
   return name.endsWith('.docx') || mime.includes('wordprocessingml')
 }
 
-function requireAiConfigured() {
-  if (!getApiKeys().length) {
+async function requireAiConfigured() {
+  if (!(await isAiAvailable())) {
     throw new Error('AI is not configured yet. Please try again later.')
   }
 }
@@ -266,7 +265,7 @@ export async function deepRebuildTailoredResume(
   onProgress?: ProgressFn,
   source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  requireAiConfigured()
+  await requireAiConfigured()
 
   let activeStage: AnalysisStage = 'extracting_resume'
   bindGroqStatus((message) => onProgress?.(activeStage, message))
@@ -353,7 +352,7 @@ export async function regenerateTailoredResume(
   onProgress?: ProgressFn,
   source?: ResumeSourceMeta,
 ): Promise<AnalysisResult> {
-  requireAiConfigured()
+  await requireAiConfigured()
   onProgress?.('planning_tailor', 'Refreshing edit suggestions…')
   const exportSource: ResumeSourceMeta = source || {
     fileName: result.tailored?.sourceFileName,

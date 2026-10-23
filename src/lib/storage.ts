@@ -1,13 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { StoredResume } from '@/types'
-import {
-  getApiKey,
-  getApiKeys,
-  hasConfiguredApiKey,
-  setApiKey,
-} from '@/lib/ai/groqKeys'
-
-export { getApiKey, getApiKeys, hasConfiguredApiKey, setApiKey }
 
 /** IndexedDB row: store file bytes as ArrayBuffer (Blobs are flaky across sessions in some browsers). */
 interface ResumeRecord {
