@@ -1,14 +1,13 @@
 import type { JobExtraction, RequirementMatch, ResumeProfile } from '@/types'
-import { callOpenAIJson, matchingSchema } from '@/lib/ai/client'
+import { callOpenAIJson, isAiAvailable, matchingSchema } from '@/lib/ai/client'
 import { localMatch } from '@/lib/ai/localEngine'
-import { getApiKeys } from '@/lib/storage'
 
 /** Compare Job Model to Resume Model with evidence. */
 export async function matchRequirements(
   job: JobExtraction,
   resume: ResumeProfile,
 ): Promise<RequirementMatch[]> {
-  if (!getApiKeys().length) return localMatch(job, resume.rawText)
+  if (!(await isAiAvailable())) return localMatch(job, resume.rawText)
 
   try {
     const data = await callOpenAIJson<{

@@ -1,7 +1,6 @@
 import type { ResumeProfile } from '@/types'
-import { callOpenAIJson, resumeProfileSchema } from '@/lib/ai/client'
+import { callOpenAIJson, isAiAvailable, resumeProfileSchema } from '@/lib/ai/client'
 import { localExtractResume } from '@/lib/ai/localEngine'
-import { getApiKeys } from '@/lib/storage'
 
 function nullToUndef<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
@@ -9,7 +8,7 @@ function nullToUndef<T>(v: T | null | undefined): T | undefined {
 
 /** Full resume → Canonical Resume Model (Groq + local fallback). */
 export async function extractResumeProfile(rawText: string): Promise<ResumeProfile> {
-  if (!getApiKeys().length) return localExtractResume(rawText)
+  if (!(await isAiAvailable())) return localExtractResume(rawText)
 
   try {
     const data = await callOpenAIJson<{

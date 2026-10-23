@@ -1,9 +1,4 @@
 ﻿import { z } from 'zod'
-import {
-  advanceKeyRotation,
-  getApiKeys,
-  keysStartingAtRotation,
-} from '@/lib/ai/groqKeys'
 
 const HONESTY_RULES = `
 Never invent employers, skills, years, metrics, or certifications.
@@ -11,9 +6,48 @@ Only use evidence from the resume. Prefer honesty over optimism.
 Return valid JSON only.
 `.trim()
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+/** Same-origin serverless proxy. The API key stays on the server. */
+const GROQ_PROXY = '/api/groq'
 /** Stay on the smaller live model so requests fit free-tier TPM. */
 const GROQ_MODEL = 'openai/gpt-oss-20b'
+
+const LEGACY_KEY_STORAGE = ['fitline_groq_key', 'fitline_groq_keys', 'fitline_openai_key']
+
+/** Drop keys saved by older builds so they cannot be reused from this browser. */
+function forgetLegacyKeys() {
+  try {
+    if (typeof localStorage === 'undefined') return
+    for (const key of LEGACY_KEY_STORAGE) localStorage.removeItem(key)
+  } catch {
+    // private mode / disabled storage
+  }
+}
+
+forgetLegacyKeys()
+
+let availabilityCache: boolean | null = null
+let availabilityPromise: Promise<boolean> | null = null
+
+/** True when the server reports a Groq key is configured. Replaces client-side key checks. */
+export async function isAiAvailable(): Promise<boolean> {
+  if (availabilityCache !== null) return availabilityCache
+  if (!availabilityPromise) {
+    availabilityPromise = (async () => {
+      try {
+        const response = await fetch(GROQ_PROXY, { method: 'GET', cache: 'no-store' })
+        if (!response.ok) return false
+        const data = (await response.json()) as { available?: unknown }
+        return data.available === true
+      } catch {
+        return false
+      }
+    })().then((ok) => {
+      availabilityCache = ok
+      return ok
+    })
+  }
+  return availabilityPromise
+}
 
 /**
  * Free tier for gpt-oss-20b is ~8k TPM org-wide (all keys share it).
@@ -73,13 +107,29 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-function parseRetryMs(errText: string): number {
+function retryMsFromText(errText: string): number | null {
   const m = errText.match(/try again in\s+([\d.]+)\s*s/i)
-  if (!m) return 8000
+  if (!m) return null
   const sec = Number(m[1])
-  if (!Number.isFinite(sec) || sec <= 0) return 8000
-  // Honor Groq's wait, with a little buffer. Cap so UI does not freeze forever.
+  if (!Number.isFinite(sec) || sec <= 0) return null
   return Math.min(Math.ceil(sec * 1000) + 400, MAX_WAIT_MS)
+}
+
+function retryMsFromHeader(response: Response): number | null {
+  const header = response.headers.get('retry-after')
+  if (!header) return null
+  const seconds = Number(header)
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(Math.ceil(seconds * 1000) + 400, MAX_WAIT_MS)
+  }
+  const when = Date.parse(header)
+  if (!Number.isFinite(when)) return null
+  return Math.min(Math.max(when - Date.now(), 500), MAX_WAIT_MS)
+}
+
+/** Honor Groq's wait from the body or Retry-After, with a little buffer. */
+function parseRetryMs(response: Response, errText: string): number {
+  return retryMsFromText(errText) ?? retryMsFromHeader(response) ?? 8000
 }
 
 function isRateOrSizeLimit(status: number): boolean {
@@ -87,17 +137,15 @@ function isRateOrSizeLimit(status: number): boolean {
 }
 
 async function fetchJsonCompletion(args: {
-  apiKey: string
   model: string
   messages: Array<{ role: string; content: string }>
   temperature: number
   maxTokens: number
   responseFormat: Record<string, unknown>
 }): Promise<string> {
-  const response = await fetch(GROQ_URL, {
+  const response = await fetch(GROQ_PROXY, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${args.apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -118,7 +166,7 @@ async function fetchJsonCompletion(args: {
     }
     err.status = response.status
     err.body = errText
-    err.retryMs = parseRetryMs(errText)
+    err.retryMs = parseRetryMs(response, errText)
     throw err
   }
 
@@ -131,10 +179,10 @@ async function fetchJsonCompletion(args: {
 }
 
 /**
- * Call Groq with JSON output. Uses Groq for real.
+ * Call the server proxy for JSON output.
  * On 429 waits for the provider retry window and tries again.
  * On 413 shrinks the prompt and retries.
- * Extra keys help only if they belong to different Groq orgs.
+ * On 5xx waits briefly and tries again.
  */
 export async function callOpenAIJson<T>(args: {
   system: string
@@ -144,8 +192,7 @@ export async function callOpenAIJson<T>(args: {
   temperature?: number
   maxTokens?: number
 }): Promise<T> {
-  const keys = getApiKeys()
-  if (!keys.length) {
+  if (!(await isAiAvailable())) {
     throw new GroqUserError('AI is not configured yet. Please try again later.')
   }
 
@@ -175,55 +222,49 @@ export async function callOpenAIJson<T>(args: {
       { role: 'user', content: user },
     ]
 
-    const orderedKeys = keysStartingAtRotation()
-    for (const apiKey of orderedKeys) {
+    try {
+      const content = await fetchJsonCompletion({
+        model: GROQ_MODEL,
+        messages,
+        temperature,
+        maxTokens,
+        responseFormat,
+      })
       try {
-        const content = await fetchJsonCompletion({
-          apiKey,
-          model: GROQ_MODEL,
-          messages,
-          temperature,
-          maxTokens,
-          responseFormat,
-        })
-        advanceKeyRotation()
-        try {
-          return JSON.parse(content) as T
-        } catch {
-          console.error('[Fitline] AI returned invalid JSON, retrying')
-          lastErr = new Error('INVALID_JSON')
-        }
-      } catch (err) {
-        lastErr = err
-        const status = (err as { status?: number }).status
-        const retryMs = Math.min((err as { retryMs?: number }).retryMs || 8000, MAX_WAIT_MS)
-        advanceKeyRotation()
-
-        if (status && isRateOrSizeLimit(status)) {
-          sawRateLimit = true
-          if (status === 413) {
-            user = user.slice(0, Math.floor(user.length * 0.65))
-            system = system.slice(0, Math.floor(system.length * 0.85))
-            maxTokens = Math.max(500, Math.floor(maxTokens * 0.7))
-            reportStatus('Tightening the request size…')
-            console.warn('[Fitline] AI request too large, shrinking and retrying')
-          } else {
-            const secs = Math.ceil(retryMs / 1000)
-            reportStatus(`Server is busy. Waiting ${secs}s, then continuing…`)
-            console.warn(`[Fitline] rate limited, waiting ${secs}s`)
-            await sleep(retryMs)
-          }
-          break
-        }
-
-        if (status && status >= 500) {
-          reportStatus('Temporary issue. Retrying…')
-          await sleep(1200)
-          break
-        }
-
-        console.error('[Fitline] AI request failed', status || err)
+        return JSON.parse(content) as T
+      } catch {
+        console.error('[Fitline] AI returned invalid JSON, retrying')
+        lastErr = new Error('INVALID_JSON')
       }
+    } catch (err) {
+      lastErr = err
+      const status = (err as { status?: number }).status
+      const retryMs = Math.min((err as { retryMs?: number }).retryMs || 8000, MAX_WAIT_MS)
+
+      if (status && isRateOrSizeLimit(status)) {
+        sawRateLimit = true
+        if (status === 413) {
+          user = user.slice(0, Math.floor(user.length * 0.65))
+          system = system.slice(0, Math.floor(system.length * 0.85))
+          maxTokens = Math.max(500, Math.floor(maxTokens * 0.7))
+          reportStatus('Tightening the request size…')
+          console.warn('[Fitline] AI request too large, shrinking and retrying')
+        } else {
+          const secs = Math.ceil(retryMs / 1000)
+          reportStatus(`Server is busy. Waiting ${secs}s, then continuing…`)
+          console.warn(`[Fitline] rate limited, waiting ${secs}s`)
+          await sleep(retryMs)
+        }
+        continue
+      }
+
+      if (status && status >= 500) {
+        reportStatus('Temporary issue. Retrying…')
+        await sleep(1200)
+        continue
+      }
+
+      console.error('[Fitline] AI request failed', status || err)
     }
   }
 
@@ -233,9 +274,6 @@ export async function callOpenAIJson<T>(args: {
   }
   throw new GroqUserError('Could not finish analysis. Please try again.')
 }
-
-// Re-export key helpers so older imports of getApiKey from storage still work via storage.ts
-export { getApiKeys }
 
 
 export const resumeProfileSchema = {

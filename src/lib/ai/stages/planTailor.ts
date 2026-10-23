@@ -6,9 +6,8 @@ import type {
   TailoringChange,
   TailoringPlan,
 } from '@/types'
-import { callOpenAIJson, tailoringSchema } from '@/lib/ai/client'
+import { callOpenAIJson, isAiAvailable, tailoringSchema } from '@/lib/ai/client'
 import { localTailor } from '@/lib/ai/localEngine'
-import { getApiKeys } from '@/lib/storage'
 import {
   applyChangesToOriginalText,
   canApplyChange,
@@ -81,7 +80,7 @@ export async function planAndGenerate(
   mode: 'standard' | 'deep' = 'standard',
 ): Promise<{ plan: TailoringPlan; tailored: TailoredResume }> {
   const deep = mode === 'deep'
-  if (!getApiKeys().length) {
+  if (!(await isAiAvailable())) {
     if (deep) {
       throw new Error('AI is not configured yet. Please try again later.')
     }

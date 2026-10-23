@@ -1,7 +1,6 @@
 import type { FitAssessment, JobExtraction, RequirementMatch, ResumeProfile } from '@/types'
-import { callOpenAIJson, fitSchema } from '@/lib/ai/client'
+import { callOpenAIJson, fitSchema, isAiAvailable } from '@/lib/ai/client'
 import { localAssessFit } from '@/lib/ai/localEngine'
-import { getApiKeys } from '@/lib/storage'
 
 function withCounts(
   fit: Omit<
@@ -39,7 +38,7 @@ export async function assessFit(
   matches: RequirementMatch[],
   resume: ResumeProfile,
 ): Promise<FitAssessment> {
-  if (!getApiKeys().length) return localAssessFit(matches)
+  if (!(await isAiAvailable())) return localAssessFit(matches)
 
   try {
     const data = await callOpenAIJson<{

@@ -1,4 +1,10 @@
 {
+  "framework": "vite",
+  "functions": {
+    "api/groq.ts": {
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/",
@@ -12,5 +18,8 @@
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
