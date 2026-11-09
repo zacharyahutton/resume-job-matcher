@@ -84,16 +84,7 @@ export function Footer() {
         </div>
         <div className="zubuz-footer-bottom fitline-footer-bottom">
           <div className="zubuz-copywright">
-            <p>
-              <a
-                href="https://zacharyhutton.online/"
-                target="_blank"
-                rel="noopener"
-              >
-                Website by Zachary Hutton
-              </a>
-              {' · '}© {new Date().getFullYear()} Fitline
-            </p>
+            <p>© {new Date().getFullYear()} Fitline</p>
           </div>
           <div className="fitline-footer-links">
             <Link to="/privacy">Privacy Policy</Link>
